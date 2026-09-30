@@ -854,15 +854,17 @@
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  width: 450px;
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
   height: 40px;
   background: var(--surface);
   border: 1px solid var(--accent-color);
   border-radius: 20px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 20px;
+  gap: 8px;
+  padding: 0 16px;
   z-index: 100;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
@@ -912,6 +914,33 @@
 
 .slider-play-button:active {
   transform: scale(0.95);
+}
+
+.slider-direction-button.is-active {
+  color: var(--text-primary);
+  background: var(--accent-color);
+}
+
+.slider-speed-button {
+  flex-shrink: 0;
+  min-width: 34px;
+  height: 22px;
+  padding: 0 6px;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-muted);
+  background: transparent;
+  border: 1px solid var(--accent-color);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.slider-speed-button:hover {
+  color: var(--text-primary);
+  background: var(--accent-color);
 }
 
 .slider-track {
