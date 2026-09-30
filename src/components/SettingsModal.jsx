@@ -118,6 +118,7 @@ export default function SettingsModal({
   const [mapSpanMarker, setMapSpanMarker] = useState(DEFAULT_SPAN_MARKER);
   const [mapEraMarker, setMapEraMarker] = useState(DEFAULT_ERA_MARKER);
   const [mapRoutes, setMapRoutes] = useState("off");
+  const [mapGlobe, setMapGlobe] = useState(false);
   const [settingsSection, setSettingsSection] = useState("general");
   const [isInitialized, setIsInitialized] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
@@ -176,6 +177,7 @@ export default function SettingsModal({
     mapSpanMarker,
     mapEraMarker,
     mapRoutes: mapRoutes !== "off" ? mapRoutes : undefined,
+    mapGlobe: mapGlobe || undefined,
     __scaleKey: JSON.stringify(scaleSections),
   });
 
@@ -342,6 +344,7 @@ export default function SettingsModal({
         setMapSpanMarker(timelineData.file.mapSpanMarker || DEFAULT_SPAN_MARKER);
         setMapEraMarker(timelineData.file.mapEraMarker || DEFAULT_ERA_MARKER);
         setMapRoutes(timelineData.file.mapRoutes || "off");
+        setMapGlobe(Boolean(timelineData.file.mapGlobe));
         setValidationErrors([]);
         setScaleSectionErrors([]);
         lastFilePathRef.current = currentPath;
@@ -501,6 +504,7 @@ export default function SettingsModal({
     mapSpanMarker,
     mapEraMarker,
     mapRoutes,
+    mapGlobe,
     isInitialized,
     isOpen,
   ]);
@@ -1568,6 +1572,24 @@ export default function SettingsModal({
                       <option key={value} value={value}>{routeLabels[value]}</option>
                     ))}
                   </select>
+                </div>
+              </div>
+              <div className="settings-row">
+                <div className="settings-row-left">
+                  <div className="settings-row-label">{t("maps.globe.label", "Globe")}</div>
+                  <div className="settings-row-description">
+                    {t("maps.globe.description", "Show the map as a 3D globe instead of a flat map. Needs WebGL.")}
+                  </div>
+                </div>
+                <div className="settings-row-right">
+                  <label className="settings-toggle">
+                    <input
+                      type="checkbox"
+                      checked={mapGlobe}
+                      onChange={(e) => setMapGlobe(e.target.checked)}
+                    />
+                    <span className="settings-toggle-slider"></span>
+                  </label>
                 </div>
               </div>
               <div className="settings-row">

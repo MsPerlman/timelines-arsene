@@ -279,6 +279,10 @@
       "description": "Choose the marker style used for events in map view.",
       "label": "Event Marker"
     },
+    "globe": {
+      "description": "Show the map as a 3D globe instead of a flat map. Needs WebGL.",
+      "label": "Globe"
+    },
     "markers": {
       "circle": "Circle",
       "diamond": "Diamond",
