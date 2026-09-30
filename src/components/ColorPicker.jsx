@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Plus } from "lucide-react";
 import { hexToHsv, hsvToHex, normalizeColor } from "../utils/colorUtils";
+import { useFavoriteColors, addFavoriteColor, removeFavoriteColor } from "../utils/favoriteColors";
 
 const POPOVER_WIDTH = 216;
 const VIEWPORT_MARGIN = 8;
@@ -16,6 +18,7 @@ function ColorPopover({ anchorRef, value, onChange, onClose }) {
   const [pos, setPos] = useState(null);
   const [hsv, setHsv] = useState(() => hexToHsv(normalizeColor(value)));
   const [hexDraft, setHexDraft] = useState(() => normalizeColor(value));
+  const favoriteColors = useFavoriteColors();
 
   // Hex loses hue at black and gray, so re-parsing our own emit would snap the slider to red
   useEffect(() => {
@@ -131,6 +134,7 @@ function ColorPopover({ anchorRef, value, onChange, onClose }) {
 
   const hueHex = hsvToHex(hsv.h, 1, 1);
   const currentHex = hsvToHex(hsv.h, hsv.s, hsv.v);
+  const isCurrentFavorite = favoriteColors.includes(currentHex.toLowerCase());
 
   return createPortal(
     <div
@@ -188,6 +192,32 @@ function ColorPopover({ anchorRef, value, onChange, onClose }) {
             if (e.key === "Enter") { e.preventDefault(); commitHex(e.currentTarget.value); }
           }}
         />
+      </div>
+
+      {/* the favorites shelf. click to wear it, right-click to break up with it */}
+      <div className="cp-favorites" role="group" aria-label="Favorite colors">
+        {favoriteColors.map((hex) => (
+          <button
+            key={hex}
+            type="button"
+            className={`cp-favorite${hex === currentHex.toLowerCase() ? " is-active" : ""}`}
+            style={{ background: hex }}
+            title={`${hex} (right-click to remove)`}
+            aria-label={`Use favorite color ${hex}`}
+            onClick={() => commitHex(hex)}
+            onContextMenu={(e) => { e.preventDefault(); removeFavoriteColor(hex); }}
+          />
+        ))}
+        <button
+          type="button"
+          className="cp-favorite-add"
+          title={isCurrentFavorite ? "Remove from favorites" : "Save to favorites"}
+          aria-label={isCurrentFavorite ? "Remove current color from favorites" : "Save current color to favorites"}
+          aria-pressed={isCurrentFavorite}
+          onClick={() => (isCurrentFavorite ? removeFavoriteColor(currentHex) : addFavoriteColor(currentHex))}
+        >
+          <Plus size={12} style={isCurrentFavorite ? { transform: "rotate(45deg)" } : undefined} />
+        </button>
       </div>
     </div>,
     document.body

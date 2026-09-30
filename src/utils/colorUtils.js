@@ -61,7 +61,7 @@ export const hsvToHex = (h, s, v) => {
   return `#${rgb.map((n) => Math.round((n + m) * 255).toString(16).padStart(2, "0")).join("")}`;
 };
 
-const isValidHexColor = (color) => /^#[0-9A-Fa-f]{6}$/.test(color);
+export const isValidHexColor = (color) => /^#[0-9A-Fa-f]{6}$/.test(color);
 
 export const normalizeColor = (color) => {
   if (!color) return "#808080";
