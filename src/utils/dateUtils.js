@@ -171,7 +171,8 @@ export const normalizeLegacyDateLabel = (label) => {
   return cal ? cal.label : label;
 };
 
-export const parseTimelineInput = (value) => {
+// fmt overrides the active slash order, e.g. when importing files written elsewhere
+export const parseTimelineInput = (value, fmt = activeDateFormat) => {
   if (value === null || value === undefined) {
     return { value: null, label: null, precision: null };
   }
@@ -188,7 +189,7 @@ export const parseTimelineInput = (value) => {
     return { value: keyword.value, label: raw.trim().toLowerCase(), precision: keyword.precision };
   }
 
-  const cal = parseCalendarDate(raw);
+  const cal = parseCalendarDate(raw, fmt);
   if (cal) {
     return { value: cal.value, label: cal.label, precision: cal.precision };
   }

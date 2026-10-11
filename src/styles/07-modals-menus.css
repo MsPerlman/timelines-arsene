@@ -2548,3 +2548,74 @@
 @keyframes toastSpin {
   to { transform: rotate(360deg); }
 }
+
+/* CSV import */
+.csv-import-section {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--accent-color);
+}
+
+.csv-import-section:last-child {
+  border-bottom: none;
+}
+
+.csv-import-table {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.csv-import-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--text-xs);
+  color: var(--ui-muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--accent-color);
+}
+
+.csv-import-table td {
+  padding: 6px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csv-import-table tbody tr + tr td {
+  border-top: 1px solid color-mix(in srgb, var(--accent-color) 50%, transparent);
+}
+
+.csv-import-header {
+  font-weight: 500;
+}
+
+.csv-import-sample {
+  color: var(--ui-muted);
+}
+
+/* Unmatched columns stay pickable but read as switched off */
+.csv-import-row-ignored td {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+
+.csv-import-row-ignored:hover td,
+.csv-import-row-ignored td:focus-within {
+  opacity: 1;
+}
+
+.csv-import-select {
+  width: 100%;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.csv-import-warning {
+  margin-top: 10px;
+  font-size: var(--text-xs);
+  color: #b42318;
+  line-height: 1.4;
+}

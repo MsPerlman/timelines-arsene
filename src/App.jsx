@@ -1604,6 +1604,8 @@ function App() {
     const result = await importTimeline(
       typeof sourcePath === "string" && sourcePath ? { sourcePath } : undefined
     );
+    // CSV needs column mapping first; the caller opens the import modal with it
+    if (result?.kind === "csv") return result;
     if (result?.conflict) {
       setImportConflict({ title: result.title, sourcePath: result.sourcePath });
       return;
@@ -1802,9 +1804,10 @@ function App() {
           useSpreadsheet: timelineConfig.useSpreadsheet || undefined,
           useMaps: timelineConfig.useMaps || undefined,
           useWiki: timelineConfig.useWiki || undefined,
-          groups: [DEFAULT_GROUP],
+          useCalendar: timelineConfig.useCalendar || undefined,
+          groups: [DEFAULT_GROUP, ...(timelineConfig.groups || [])],
         },
-        elements: []
+        elements: timelineConfig.elements || []
       };
 
     if (!timelineConfig.startLabel) delete newTimeline.file.startLabel;

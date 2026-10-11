@@ -44,7 +44,7 @@
   "diskReload": {
     "message": "Timeline changed on disk."
   },
-  "dropToImport": "Drop a .timeline file to import it",
+  "dropToImport": "Drop a .timeline or .csv file to import it",
   "editedAgo": "Edited {{when}}",
   "exportPng": {
     "background": {
@@ -199,7 +199,44 @@
   },
   "folderNamePlaceholder": "Folder name",
   "import": "Import",
-  "importHint": "Import a .timeline or .json file into your library",
+  "importCsv": {
+    "columns": {
+      "csvColumn": "CSV column",
+      "description": "Choose what each column becomes. A title and a date are required. Rows with an end date become spans, the rest become events.",
+      "example": "Example",
+      "ignore": "Don't import",
+      "importAs": "Import as",
+      "label": "Columns",
+      "unnamed": "(unnamed)"
+    },
+    "create": "Create Timeline",
+    "dateFormat": {
+      "description": "How to read dates like 03/04/2024. Plain years and YYYY-MM-DD dates are always understood.",
+      "dmy": "Day / Month / Year",
+      "label": "Date Order",
+      "mdy": "Month / Day / Year"
+    },
+    "empty": "This file has no rows to import.",
+    "errors": {
+      "nothingToImport": "No rows can be imported. Map a title and a date column."
+    },
+    "missingDate": "Pick which column holds the date or start date.",
+    "missingTitle": "Pick which column holds the title.",
+    "preview": {
+      "label": "Preview",
+      "skipped_one": "{{count}} row will be skipped:",
+      "skipped_other": "{{count}} rows will be skipped:",
+      "skippedRow": "row {{row}} ({{reason}})",
+      "summary_one": "{{count}} element ({{events}} events, {{spans}} spans, {{eras}} eras)",
+      "summary_other": "{{count}} elements ({{events}} events, {{spans}} spans, {{eras}} eras)"
+    },
+    "skipReason": {
+      "noDate": "no readable date",
+      "noTitle": "no title"
+    },
+    "title": "IMPORT CSV"
+  },
+  "importHint": "Import a .timeline, .json or .csv file into your library",
   "library": "Library",
   "loadingTimelines": "Loading timelines...",
   "marketplace": {

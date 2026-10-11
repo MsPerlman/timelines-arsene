@@ -1147,7 +1147,7 @@ ipcMain.handle('import-timeline', async (event, payload) => {
       const { filePaths, canceled } = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile'],
         filters: [
-          { name: 'Timeline Files', extensions: ['timeline', 'json'] },
+          { name: 'Timeline Files', extensions: ['timeline', 'json', 'csv', 'tsv'] },
           { name: 'All Files', extensions: ['*'] },
         ],
       });
@@ -1158,6 +1158,10 @@ ipcMain.handle('import-timeline', async (event, payload) => {
     }
 
     const buf = await fs.readFile(sourcePath);
+    // Spreadsheet data goes back to the renderer for column mapping before a timeline is made
+    if (/\.(csv|tsv)$/i.test(sourcePath)) {
+      return { success: true, kind: 'csv', text: buf.toString('utf8'), fileName: path.basename(sourcePath) };
+    }
     const result = await installTimelineFromBuffer(buf, { sourcePath, resolution });
     if (result?.success && !result?.openedExisting) {
       markGitSyncStructureDirty();

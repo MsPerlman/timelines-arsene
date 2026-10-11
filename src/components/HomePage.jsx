@@ -236,6 +236,7 @@ function buildSyncTree(files, t) {
 }
 
 import NewTimelineModal from "./NewTimelineModal";
+import ImportCsvModal from "./ImportCsvModal";
 import "../styles/02-homepage.css";
 import "../styles/07-modals-menus.css";
 import themeConfig from "../config/theme.json";
@@ -316,6 +317,7 @@ export default function HomePage({
   const [timelineFiles, setTimelineFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isNewTimelineModalOpen, setIsNewTimelineModalOpen] = useState(false);
+  const [csvImport, setCsvImport] = useState(null); // { text, fileName } awaiting column mapping
   const [contextMenu, setContextMenu] = useState(null);
   const [view, setView] = useState(settingsOnly ? "settings" : "home");
   const [searchQuery, setSearchQuery] = useState("");
@@ -784,12 +786,24 @@ export default function HomePage({
     return result;
   };
 
+  // CSV files come back unimported so the user can map columns first
+  const handleImport = async (sourcePath) => {
+    const result = await onImportTimeline?.(sourcePath);
+    if (result?.kind === "csv") setCsvImport({ text: result.text, fileName: result.fileName });
+  };
+
+  const handleCreateFromCsv = async (timelineConfig) => {
+    const result = await onCreateTimeline({ ...timelineConfig, folder: currentFolder || '' });
+    if (result?.success) setCsvImport(null);
+    return result;
+  };
+
   const openTimelineFile = (file) => {
     if (file.isPackage) onImportTimeline?.(file.packagePath);
     else onSelectTimeline(file.id, Boolean(file.thumbnailUrl));
   };
 
-  const anyModalOpen = isNewTimelineModalOpen || newFolderDialogOpen || !!moveDialogFile
+  const anyModalOpen = isNewTimelineModalOpen || !!csvImport || newFolderDialogOpen || !!moveDialogFile
     || isMarketplaceOpen || !!deleteDialogFile || !!gitSyncShareDialog || !!gitSyncHistoryDialog;
 
   useEscapeKey(sortMenuOpen, () => setSortMenuOpen(false));
@@ -826,9 +840,9 @@ export default function HomePage({
       setIsDragOver(false);
       if (anyModalOpen) return;
       const file = e.dataTransfer?.files?.[0];
-      if (!file || !/\.(timeline|json)$/i.test(file.name)) return;
+      if (!file || !/\.(timeline|json|csv|tsv)$/i.test(file.name)) return;
       const sourcePath = window.electron?.getPathForFile?.(file);
-      if (sourcePath) onImportTimeline?.(sourcePath);
+      if (sourcePath) handleImport(sourcePath);
     };
     window.addEventListener("dragover", onDragOver);
     window.addEventListener("dragleave", onDragLeave);
@@ -838,6 +852,7 @@ export default function HomePage({
       window.removeEventListener("dragleave", onDragLeave);
       window.removeEventListener("drop", onDrop);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleImport only wraps onImportTimeline
   }, [settingsOnly, onImportTimeline, anyModalOpen]);
 
   const handleContextMenu = (e, file) => {
@@ -1525,7 +1540,7 @@ export default function HomePage({
     <div className={`homepage${settingsOnly ? " homepage-settings-only" : ""}`}>
       {!settingsOnly && isDragOver && (
         <div className="homepage-drop-overlay">
-          <div className="homepage-drop-card">{t("app:dropToImport", "Drop a .timeline file to import it")}</div>
+          <div className="homepage-drop-card">{t("app:dropToImport", "Drop a .timeline or .csv file to import it")}</div>
         </div>
       )}
       {!settingsOnly && (
@@ -1572,8 +1587,8 @@ export default function HomePage({
                 <button
                   className="home-secondary-btn"
                   type="button"
-                  onClick={() => onImportTimeline?.()}
-                  title={t("app:importHint", "Import a .timeline or .json file into your library")}
+                  onClick={() => handleImport()}
+                  title={t("app:importHint", "Import a .timeline, .json or .csv file into your library")}
                 >
                   <Import size={14} strokeWidth={2.5} />
                   <span>{t("app:import", "Import")}</span>
@@ -1959,6 +1974,15 @@ export default function HomePage({
             onClose={() => setIsNewTimelineModalOpen(false)}
             onCreate={handleCreateTimeline}
           />
+
+          {csvImport && (
+            <ImportCsvModal
+              text={csvImport.text}
+              fileName={csvImport.fileName}
+              onClose={() => setCsvImport(null)}
+              onCreate={handleCreateFromCsv}
+            />
+          )}
         </>
       )}
 

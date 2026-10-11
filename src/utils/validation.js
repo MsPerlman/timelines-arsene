@@ -1,4 +1,4 @@
-import { parseTimelineInput, snapToMonthGrid, isValidTimeOfDay } from "./dateUtils";
+import { parseTimelineInput, snapToMonthGrid, isValidTimeOfDay } from "./dateUtils.js";
 
 // --- ID / tag / filename validators ---
 
