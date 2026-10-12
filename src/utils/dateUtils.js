@@ -200,6 +200,15 @@ export const parseTimelineInput = (value, fmt = activeDateFormat) => {
     : { value: null, label: null, precision: null };
 };
 
+// Dynamic labels re-resolve; the stored number is from the last save
+export const resolveLabeledDate = (value, label) => {
+  if (typeof label === "string" && label.trim()) {
+    const parsed = parseTimelineInput(label);
+    if (Number.isFinite(parsed.value)) return parsed.value;
+  }
+  return value;
+};
+
 export const snapToMonthGrid = (value) => {
   if (!Number.isFinite(value)) return value;
   return Math.round(value * 12) / 12;

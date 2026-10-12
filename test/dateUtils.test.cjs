@@ -163,3 +163,12 @@ test("low years round-trip through the input field without jumping to the 2000s"
   assert.strictEqual(displayDateLabel("0004-01-01"), "0004-01-01");
   setActiveDateFormat("MDY");
 });
+
+test("resolveLabeledDate re-resolves dynamic labels instead of the stale stored value", async () => {
+  const { resolveLabeledDate, todayFractionalYear } = await load();
+  const savedLastYear = todayFractionalYear() - 1;
+  assert.strictEqual(resolveLabeledDate(savedLastYear, "current"), todayFractionalYear());
+  assert.strictEqual(resolveLabeledDate(2020.5, "2020-07-01"), resolveLabeledDate(0, "2020-07-01"));
+  assert.strictEqual(resolveLabeledDate(-323, undefined), -323);
+  assert.strictEqual(resolveLabeledDate(-323, ""), -323);
+});
