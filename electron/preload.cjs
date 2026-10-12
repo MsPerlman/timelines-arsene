@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('electron', {
   getAppSettings: () => ipcRenderer.invoke('get-app-settings'),
   setAppSettings: (settings) => ipcRenderer.invoke('set-app-settings', settings),
   chooseTimelinesDir: () => ipcRenderer.invoke('choose-timelines-dir'),
+  previewTimelinesFolderChange: (payload) => ipcRenderer.invoke('preview-timelines-folder-change', payload),
+  switchTimelinesFolder: (payload) => ipcRenderer.invoke('switch-timelines-folder', payload),
   chooseNotesDir: () => ipcRenderer.invoke('choose-notes-dir'),
   chooseNotesSubfolder: () => ipcRenderer.invoke('choose-notes-subfolder'),
   relaunchApp: () => ipcRenderer.invoke('relaunch-app'),

@@ -314,6 +314,25 @@ class GitSyncEngine {
     ));
   }
 
+  // Runs on the sync queue so no pass sees a half-moved library. Timelines missing afterwards were left
+  // in the old folder, not deleted, so they're untracked rather than deleted remotely.
+  runLibraryFolderChange(task) {
+    const run = this._queue.then(async () => {
+      const result = await task();
+      if (result?.success && this.isConnected()) {
+        const present = new Set((await this.listTimelines()).map((t) => t?.uid).filter(Boolean));
+        for (const uid of Object.keys(this.state.uidToPath)) {
+          if (!present.has(uid)) delete this.state.uidToPath[uid];
+        }
+        await this._saveState();
+        this.markStructureDirty();
+      }
+      return result;
+    });
+    this._queue = run.catch(() => {});
+    return run;
+  }
+
   syncNow(opts = {}) {
     const run = this._queue.then(() => this._syncPass(opts));
     this._queue = run.catch(() => {});

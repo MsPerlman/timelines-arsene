@@ -265,6 +265,7 @@ function App() {
   const [isNewTimelineModalOpen, setIsNewTimelineModalOpen] = useState(false);
   const [importConflict, setImportConflict] = useState(null); // { title, sourcePath }
   const [skippedFilesNotice, setSkippedFilesNotice] = useState(null); // { title, message, files }
+  const [timelinesMoveDialog, setTimelinesMoveDialog] = useState(null); // { from, to, count, nested, nextDir, isMoving }
   const [isExportPngModalOpen, setIsExportPngModalOpen] = useState(false);
   const [exportPngOptions, setExportPngOptions] = useState(null);
   const [exportPngProgress, setExportPngProgress] = useState(null); // { percent, stage }
@@ -1687,6 +1688,77 @@ function App() {
     </div>
   );
 
+  const timelinesMoveModal = timelinesMoveDialog && (() => {
+    const { count, from, to, nested, gitSyncConnected, cloudSynced, isMoving } = timelinesMoveDialog;
+    const hasTimelines = count > 0;
+    return (
+      <div className="settings-backdrop" onClick={() => { if (!isMoving) setTimelinesMoveDialog(null); }}>
+        <div className="settings-modal confirm-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="settings-header">
+            <h2 className="settings-title">
+              {hasTimelines ? t("app:moveTimelines.title", "MOVE TIMELINES?") : t("app:moveTimelines.changeTitle", "CHANGE TIMELINES FOLDER?")}
+            </h2>
+          </div>
+          <div className="confirm-content">
+            {hasTimelines && (
+              <>
+                <p className="confirm-text">
+                  {t("app:moveTimelines.message", {
+                    count,
+                    defaultValue_one: "Your current folder has {{count}} timeline. Move it, with its notes and images, to the new folder?",
+                    defaultValue_other: "Your current folder has {{count}} timelines. Move them, with their notes and images, to the new folder?",
+                  })}
+                </p>
+                <ul className="confirm-file-list">
+                  <li>{t("app:moveTimelines.from", "From: {{path}}", { path: from })}</li>
+                  <li>{t("app:moveTimelines.to", "To: {{path}}", { path: to })}</li>
+                </ul>
+                <p className="confirm-text">
+                  {nested
+                    ? t("app:moveTimelines.nested", "The new folder is inside the current one (or contains it), so timelines can't be moved there. You can still switch without moving.")
+                    : t("app:moveTimelines.stayHint", "If you don't move them, they stay in the old folder and won't appear in your library until you switch back. Nothing is overwritten in the new folder.")}
+                </p>
+                {gitSyncConnected && (
+                  <p className="confirm-text">
+                    {t("app:moveTimelines.gitSyncHint", "Git Sync: timelines left in the old folder stop syncing from this computer. They stay in your repository and on your other devices.")}
+                  </p>
+                )}
+              </>
+            )}
+            {gitSyncConnected && cloudSynced && (
+              <p className="confirm-warning">
+                {t("app:moveTimelines.cloudWarning", "This folder looks like it's synced by another service, such as Dropbox or iCloud. Using it with Git Sync can create conflicting or duplicate timelines across devices, so it's best to use one or the other.")}
+              </p>
+            )}
+          </div>
+          <div className="confirm-actions">
+            <button className="settings-folder-button" disabled={isMoving} onClick={() => setTimelinesMoveDialog(null)}>
+              {t("common:actions.cancel", "Cancel")}
+            </button>
+            {hasTimelines ? (
+              <>
+                <button className="settings-folder-button" disabled={isMoving} onClick={handleSwitchTimelinesDirOnly}>
+                  {t("app:moveTimelines.switchOnly", "Switch Without Moving")}
+                </button>
+                <button
+                  className="settings-folder-button confirm-primary-button"
+                  disabled={isMoving || nested}
+                  onClick={handleMoveTimelinesAndSwitch}
+                >
+                  {isMoving ? t("app:moveTimelines.moving", "Moving...") : t("app:moveTimelines.move", "Move Timelines")}
+                </button>
+              </>
+            ) : (
+              <button className="settings-folder-button confirm-primary-button" onClick={handleSwitchTimelinesDirOnly}>
+                {t("app:moveTimelines.useFolder", "Use This Folder")}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  })();
+
   const handleDownloadPNG = () => {
     // Open the export PNG modal
     setIsExportPngModalOpen(true);
@@ -2218,10 +2290,64 @@ function App() {
     await saveAppSettings({ disableThumbnails: next });
   };
 
+  // Timelines left in the old folder would seem to vanish, so offer to move them
+  const requestTimelinesDirChange = async (nextDir) => {
+    const preview = await window.electron?.previewTimelinesFolderChange?.({ nextDir: nextDir || "" });
+    const warnCloud = preview?.gitSyncConnected && preview?.cloudSynced;
+    if (!preview?.success || (preview.count === 0 && !warnCloud)) {
+      await switchTimelinesDir(nextDir, false);
+      return;
+    }
+    setTimelinesMoveDialog({ ...preview, nextDir: nextDir || "", isMoving: false });
+  };
+
+  const switchTimelinesDir = async (nextDir, move) => {
+    const result = window.electron?.switchTimelinesFolder
+      ? await window.electron.switchTimelinesFolder({ nextDir: nextDir || "", move })
+      : { success: true, moved: 0, skipped: [] };
+    if (result?.success) await handleTimelineStorageDirChange(nextDir);
+    return result;
+  };
+
+  const handleSwitchTimelinesDirOnly = async () => {
+    const dialog = timelinesMoveDialog;
+    setTimelinesMoveDialog(null);
+    if (!dialog) return;
+    const result = await switchTimelinesDir(dialog.nextDir, false);
+    if (!result?.success) {
+      showToast(t("app:moveTimelines.switchFailed", "Couldn't switch folders: {{error}}", { error: result?.error || t("app:toasts.unknownError", "unknown error") }), "error", 5000);
+    }
+  };
+
+  const handleMoveTimelinesAndSwitch = async () => {
+    const dialog = timelinesMoveDialog;
+    if (!dialog || dialog.isMoving) return;
+    setTimelinesMoveDialog({ ...dialog, isMoving: true });
+    const result = await switchTimelinesDir(dialog.nextDir, true);
+    setTimelinesMoveDialog(null);
+    if (!result?.success) {
+      showToast(t("app:moveTimelines.failed", "Couldn't move timelines: {{error}}", { error: result?.error || t("app:toasts.unknownError", "unknown error") }), "error", 5000);
+      return;
+    }
+    if (result.skipped?.length) {
+      setSkippedFilesNotice({
+        title: t("app:moveTimelines.skippedTitle", "MOVE FINISHED"),
+        message: t("app:moveTimelines.skippedMessage", {
+          count: result.skipped.length,
+          defaultValue_one: "{{count}} file already existed in the new folder, so it was left in the old folder:",
+          defaultValue_other: "{{count}} files already existed in the new folder, so they were left in the old folder:",
+        }),
+        files: result.skipped,
+      });
+    } else {
+      showToast(t("app:moveTimelines.moved", { count: result.moved, defaultValue_one: "Moved {{count}} timeline", defaultValue_other: "Moved {{count}} timelines" }));
+    }
+  };
+
   const handlePickTimelinesDir = async () => {
     const result = await chooseTimelinesDir();
     if (result?.success && result.path) {
-      await handleTimelineStorageDirChange(result.path);
+      await requestTimelinesDirChange(result.path);
     }
   };
 
@@ -2477,7 +2603,7 @@ function App() {
             fonts={availableFonts}
             timelineStorageDir={timelineStorageDir}
             notesStorageDir={notesStorageDir}
-            onTimelineStorageDirChange={handleTimelineStorageDirChange}
+            onTimelineStorageDirChange={requestTimelinesDirChange}
             onNotesStorageDirChange={handleNotesStorageDirChange}
             onPickTimelinesDir={handlePickTimelinesDir}
             onPickNotesDir={handlePickNotesDir}
@@ -2506,6 +2632,7 @@ function App() {
         </div>
         {importConflictModal}
         {skippedFilesModal}
+        {timelinesMoveModal}
       </>
     );
   }
@@ -2752,7 +2879,7 @@ function App() {
           fonts={availableFonts}
           timelineStorageDir={timelineStorageDir}
           notesStorageDir={notesStorageDir}
-          onTimelineStorageDirChange={handleTimelineStorageDirChange}
+          onTimelineStorageDirChange={requestTimelinesDirChange}
           onNotesStorageDirChange={handleNotesStorageDirChange}
           onPickTimelinesDir={handlePickTimelinesDir}
           onPickNotesDir={handlePickNotesDir}
@@ -2961,6 +3088,7 @@ function App() {
       />
       {importConflictModal}
       {skippedFilesModal}
+      {timelinesMoveModal}
       </div>
       <Toast toast={toast} />
     </TimelineColorsContext.Provider>

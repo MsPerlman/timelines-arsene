@@ -236,6 +236,69 @@ test('local deletions propagate to other machines', async (t) => {
   assert.ok(libB.get('alpha'));
 });
 
+test('switching the timelines folder leaves timelines behind without deleting them remotely', async (t) => {
+  const ctx = await makeCtx(t);
+  const libA = makeLibrary();
+  const libB = makeLibrary();
+  libA.add({ uid: 'alpha', relativeId: 'alpha', title: 'Alpha' });
+  libA.add({ uid: 'beta', relativeId: 'beta', title: 'Beta' });
+  const A = makeEngine(ctx, 'machine-a', libA);
+  const B = makeEngine(ctx, 'machine-b', libB);
+  await A.init();
+  await B.init();
+  await A.connect({ url: ctx.url, branch: 'main' });
+  await B.connect({ url: ctx.url, branch: 'main' });
+
+  // The new folder only has alpha; beta stays in the old folder
+  await A.runLibraryFolderChange(async () => {
+    libA.timelines.delete('beta');
+    return { success: true };
+  });
+  await A.syncNow({ full: true });
+  assert.ok(ctx.remoteFiles().includes('beta.timeline'));
+
+  await B.syncNow();
+  assert.ok(libB.get('beta'));
+});
+
+test('a sync requested during a timelines folder move waits for it to finish', async (t) => {
+  const ctx = await makeCtx(t);
+  const libA = makeLibrary();
+  libA.add({ uid: 'alpha', relativeId: 'alpha', title: 'Alpha' });
+  libA.add({ uid: 'beta', relativeId: 'beta', title: 'Beta' });
+  const A = makeEngine(ctx, 'machine-a', libA);
+  await A.init();
+  await A.connect({ url: ctx.url, branch: 'main' });
+
+  // Mid-move the library is briefly empty; a pass seeing that would push deletions
+  const saved = new Map(libA.timelines);
+  const move = A.runLibraryFolderChange(async () => {
+    libA.timelines.clear();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    for (const [uid, record] of saved) libA.timelines.set(uid, record);
+    return { success: true };
+  });
+  const sync = A.syncNow({ full: true });
+  await Promise.all([move, sync]);
+  assert.deepEqual(ctx.remoteFiles().filter((f) => f.endsWith('.timeline')).sort(), ['alpha.timeline', 'beta.timeline']);
+});
+
+test('deleting a timeline after a folder switch still propagates', async (t) => {
+  const ctx = await makeCtx(t);
+  const libA = makeLibrary();
+  libA.add({ uid: 'alpha', relativeId: 'alpha', title: 'Alpha' });
+  libA.add({ uid: 'beta', relativeId: 'beta', title: 'Beta' });
+  const A = makeEngine(ctx, 'machine-a', libA);
+  await A.init();
+  await A.connect({ url: ctx.url, branch: 'main' });
+
+  await A.runLibraryFolderChange(async () => ({ success: true }));
+  libA.timelines.delete('alpha');
+  await A.syncNow();
+  assert.ok(!ctx.remoteFiles().includes('alpha.timeline'));
+  assert.ok(ctx.remoteFiles().includes('beta.timeline'));
+});
+
 test('divergent edits keep both versions via a conflict copy, history stays linear', async (t) => {
   const ctx = await makeCtx(t);
   const libA = makeLibrary();

@@ -1191,6 +1191,30 @@
   border-color: #9c1c13;
 }
 
+.confirm-primary-button {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--surface);
+}
+
+.confirm-primary-button:hover {
+  opacity: 0.88;
+}
+
+.confirm-warning {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid #d4a017;
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, #d4a017, transparent 88%);
+}
+
+.confirm-primary-button:disabled,
+.confirm-actions .settings-folder-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .settings-row-docs {
   padding-top: 10px;
   margin-top: 4px;

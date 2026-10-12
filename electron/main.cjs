@@ -1815,6 +1815,149 @@ ipcMain.handle('git-sync-restore-version', async (event, payload) => {
   }
 });
 
+const isInsidePath = (child, parent) => {
+  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+};
+
+const pathExists = (p) => fs.access(p).then(() => true, () => false);
+
+// rename, falling back to copy + delete when the destination is on another drive
+async function moveFsEntry(src, dest) {
+  await fs.mkdir(path.dirname(dest), { recursive: true });
+  try {
+    await fs.rename(src, dest);
+  } catch (err) {
+    if (err.code !== 'EXDEV') throw err;
+    await fs.cp(src, dest, { recursive: true, errorOnExist: true, force: false });
+    await fs.rm(src, { recursive: true, force: true });
+  }
+}
+
+// Never overwrites: files already at the destination stay in srcDir and are reported in skipped
+async function mergeMoveDir(srcDir, destDir, labelBase, skipped) {
+  const entries = await fs.readdir(srcDir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const src = path.join(srcDir, entry.name);
+    const dest = path.join(destDir, entry.name);
+    if (!(await pathExists(dest))) {
+      await moveFsEntry(src, dest);
+    } else if (entry.isDirectory()) {
+      await mergeMoveDir(src, dest, labelBase, skipped);
+    } else {
+      skipped.push(path.relative(labelBase, src).replace(/\\/g, '/'));
+    }
+  }
+}
+
+async function listLibraryFolders(dir, baseDir, out = []) {
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    const full = path.join(dir, entry.name);
+    out.push(path.relative(baseDir, full));
+    await listLibraryFolders(full, baseDir, out);
+  }
+  return out;
+}
+
+// Deepest first, so a folder emptied by the move is removed before its parent is checked
+async function removeEmptyDirs(dirs) {
+  for (const dir of [...dirs].sort((a, b) => b.length - a.length)) {
+    const remaining = await fs.readdir(dir).catch(() => null);
+    if (remaining && remaining.length === 0) await fs.rmdir(dir).catch(() => {});
+  }
+}
+
+// Folders another sync service manages; with Git Sync too, both write the same files
+const CLOUD_SYNCED_PATH = /dropbox|onedrive|google ?drive|icloud|clouddocs|mobile documents|cloudstorage|box sync/i;
+
+// nextDir '' means the default folder
+ipcMain.handle('preview-timelines-folder-change', async (event, { nextDir }) => {
+  try {
+    const from = path.resolve(await getTimelinesDir());
+    const to = path.resolve(String(nextDir || '').trim() || defaultTimelinesDir());
+    const count = samePath(from, to) ? 0 : (await listTimelineFilesRecursive(from, from)).length;
+    return {
+      success: true,
+      from,
+      to,
+      count,
+      nested: isInsidePath(to, from) || isInsidePath(from, to),
+      gitSyncConnected: Boolean(gitSync?.isConnected()),
+      cloudSynced: CLOUD_SYNCED_PATH.test(to),
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Moves only the app's files (timelines, library folders, and notes/images when not in a custom
+// location), so unrelated files in a custom folder stay put. Never overwrites.
+async function moveTimelinesLibrary(nextDir) {
+  try {
+    const from = path.resolve(await getTimelinesDir());
+    const to = path.resolve(String(nextDir || '').trim() || defaultTimelinesDir());
+    if (samePath(from, to)) return { success: true, moved: 0, skipped: [] };
+    if (isInsidePath(to, from) || isInsidePath(from, to)) {
+      return { success: false, error: 'The new folder cannot be inside the current one, or contain it.' };
+    }
+    await fs.mkdir(to, { recursive: true });
+
+    const skipped = [];
+    let moved = 0;
+
+    const folders = await listLibraryFolders(from, from);
+    for (const rel of folders) await fs.mkdir(path.join(to, rel), { recursive: true });
+
+    for (const { fullPath, relativeId } of await listTimelineFilesRecursive(from, from)) {
+      const dest = path.join(to, ...`${relativeId}.timeline`.split('/'));
+      if (await pathExists(dest)) {
+        skipped.push(`${relativeId}.timeline`);
+        continue;
+      }
+      await moveFsEntry(fullPath, dest);
+      moved++;
+    }
+
+    const settings = await readAppSettings();
+    const usesDefaultDataDirs = !settings?.notesStorageDir?.trim() && !settings?.assetsStorageDir?.trim();
+    if (usesDefaultDataDirs) {
+      for (const name of ['.notes', '.assets']) {
+        const src = path.join(from, name);
+        if (!(await pathExists(src))) continue;
+        const dest = path.join(to, name);
+        if (await pathExists(dest)) await mergeMoveDir(src, dest, from, skipped);
+        else await moveFsEntry(src, dest);
+      }
+    }
+
+    await removeEmptyDirs([
+      ...folders.map((rel) => path.join(from, rel)),
+      ...(usesDefaultDataDirs ? [path.join(from, '.notes'), path.join(from, '.assets')] : []),
+    ]);
+    return { success: true, moved, skipped };
+  } catch (error) {
+    console.error('Error moving timelines library:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// All timelines-folder changes go through here so Git Sync doesn't read left-behind timelines as deletions
+ipcMain.handle('switch-timelines-folder', async (event, { nextDir, move = false }) => {
+  const doSwitch = async () => {
+    const result = move ? await moveTimelinesLibrary(nextDir) : { success: true, moved: 0, skipped: [] };
+    if (result.success) await writeAppSettingsPartial({ timelineStorageDir: String(nextDir || '').trim() });
+    return result;
+  };
+  try {
+    return gitSync ? await gitSync.runLibraryFolderChange(doSwitch) : await doSwitch();
+  } catch (error) {
+    console.error('Error switching timelines folder:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('choose-timelines-dir', async () => {
   try {
     const { filePaths, canceled } = await dialog.showOpenDialog(mainWindow, {
