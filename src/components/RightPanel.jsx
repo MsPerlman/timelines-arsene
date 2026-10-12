@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Maximize2, Minimize2, Underline, Link, Trash2, Unlink, ChevronLeft, ChevronRight, ChevronDown, Pencil, ExternalLink, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X, Image as ImageIcon, Shapes, MoveVertical, Minus, SquareDashed, CalendarOff, EyeOff, ArrowLeftToLine, ArrowRightToLine } from "lucide-react";
+import { Maximize2, Minimize2, Link, Trash2, ChevronLeft, ChevronRight, ChevronDown, Pencil, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X, Image as ImageIcon, Shapes, MoveVertical, Minus, SquareDashed, CalendarOff, EyeOff, ArrowLeftToLine, ArrowRightToLine } from "lucide-react";
 import NoteEditor from "./NoteEditor";
 import WikiSection from "./WikiSection";
 import SourcesSection from "./SourcesSection";
@@ -2728,7 +2728,6 @@ export default function RightPanel({
                   useWiki={useWiki}
                   isEditMode={true}
                   onUrlChange={handleWikiUrlChange}
-                  compactAdd
                   startOpen={!formData.wikiUrl}
                   onCancelAdd={() => setIsWikiAdding(false)}
                 />

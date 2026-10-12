@@ -19,7 +19,8 @@ async function fetchWikiApi(url) {
   }
 }
 
-const WIKI_SANITIZE_VERSION = "collapsible-2";
+// Bump when sanitizeWikiHtml changes its output so cached articles are re-processed
+const WIKI_SANITIZE_VERSION = "series-sidebar-2";
 
 // Persistent cache entries older than this are re-fetched in the background after being served.
 const WIKI_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -142,11 +143,145 @@ function sanitizeWikiHtml(html, host = "https://en.wikipedia.org") {
     collapsible.parentNode.replaceChild(details, collapsible);
   });
 
+  doc.body.querySelectorAll("table.sidebar").forEach((table) => collapseSeriesSidebar(doc, table));
+
+  // An item holding only a nested list (no text of its own) would show a stray empty bullet
+  doc.body.querySelectorAll("li").forEach((li) => {
+    const onlyNestedLists = Array.from(li.childNodes).every((node) =>
+      (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) ||
+      (node.nodeType === Node.ELEMENT_NODE && (node.tagName === "UL" || node.tagName === "OL"))
+    );
+    if (onlyNestedLists && li.children.length > 0) li.classList.add("wiki-li-bare");
+  });
+
   return doc.body.innerHTML;
 }
 
-// compactAdd: the parent renders its own "add" trigger, so skip the add card and start with the URL input open
-export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange, compactAdd = false, startOpen = false, onCancelAdd }) {
+// Text as it reads on screen: line breaks become spaces, whitespace collapses
+function readableText(el) {
+  if (!el) return "";
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll("br").forEach((br) => br.replaceWith(" "));
+  return clone.textContent.replace(/\s+/g, " ").trim();
+}
+
+// Wikipedia puts several sections in one cell as <hr>, a heading <div>, then a list.
+// Returns the nodes before the first heading, then each heading with the nodes under it.
+function splitHrSections(cell) {
+  const lead = [];
+  const sections = [];
+  let current = null;
+  let afterHr = false;
+  Array.from(cell.childNodes).forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) return;
+    if (node.nodeName === "HR") {
+      afterHr = true;
+      return;
+    }
+    const isHeading = afterHr && node.nodeType === Node.ELEMENT_NODE &&
+      ["DIV", "P", "B", "STRONG"].includes(node.nodeName) && !node.querySelector("ul, ol, img");
+    afterHr = false;
+    if (isHeading) {
+      current = { heading: node, nodes: [] };
+      sections.push(current);
+    } else if (current) {
+      current.nodes.push(node);
+    } else {
+      lead.push(node);
+    }
+  });
+  return { lead, sections };
+}
+
+// "Part of a series about X" sidebars run several screens when expanded, so fold the whole
+// table into one closed <details>, with each headed section as its own show/hide section.
+// Handles the generic layout (heading rows) and the person layout (one cell split by <hr>).
+function collapseSeriesSidebar(doc, table) {
+  const headerCell = table.querySelector(".sidebar-person-title") ||
+    table.querySelector(".sidebar-title-with-pretitle") ||
+    table.querySelector(".sidebar-title");
+  const headerText = readableText(headerCell);
+  const linkText = readableText(headerCell?.querySelector(".fn, a"));
+  let pretitle = readableText(table.querySelector(".sidebar-pretitle, .sidebar-pretitle-with-top-image"));
+  const titleText = linkText || headerText;
+  // Person sidebars keep the "part of a series" line in the same cell as the name
+  if (!pretitle && linkText && headerText.endsWith(linkText)) {
+    pretitle = headerText.slice(0, -linkText.length).trim();
+  }
+
+  const series = doc.createElement("details");
+  series.className = "wiki-series";
+  const summary = doc.createElement("summary");
+  summary.className = "wiki-series-summary";
+  const label = doc.createElement("span");
+  if (pretitle) label.appendChild(doc.createTextNode(`${pretitle} `));
+  const title = doc.createElement("strong");
+  title.textContent = titleText || "Series";
+  label.appendChild(title);
+  summary.appendChild(label);
+  series.appendChild(summary);
+
+  const body = doc.createElement("div");
+  body.className = "wiki-series-body";
+  const moveChildren = (from, to) => { while (from.firstChild) to.appendChild(from.firstChild); return to; };
+  const addSection = (headingEl, contentEl) => {
+    const section = doc.createElement("details");
+    section.className = "wiki-sidebar-section";
+    const sectionSummary = doc.createElement("summary");
+    sectionSummary.className = "wiki-sidebar-summary";
+    sectionSummary.textContent = readableText(headingEl);
+    section.appendChild(sectionSummary);
+    contentEl.className = "wiki-sidebar-content";
+    section.appendChild(contentEl);
+    body.appendChild(section);
+  };
+  const addImage = (cell) => {
+    if (!cell?.querySelector("img")) return;
+    const image = doc.createElement("div");
+    image.className = "wiki-series-image";
+    body.appendChild(moveChildren(cell, image));
+  };
+
+  // The person layout's portrait lives inside the header, which is otherwise skipped
+  addImage(table.querySelector(".sidebar-person-title-image"));
+
+  let pendingHeading = null;
+  table.querySelectorAll(":scope > tbody > tr > th, :scope > tbody > tr > td, :scope > tr > th, :scope > tr > td").forEach((cell) => {
+    const has = (cls) => cell.classList.contains(cls);
+    if (["sidebar-pretitle", "sidebar-pretitle-with-top-image", "sidebar-title", "sidebar-title-with-pretitle", "sidebar-navbar"].some(has)) return;
+    if (has("sidebar-heading")) {
+      pendingHeading = cell;
+      return;
+    }
+    if (has("sidebar-image")) {
+      addImage(cell);
+      return;
+    }
+    if (pendingHeading) {
+      addSection(pendingHeading, moveChildren(cell, doc.createElement("div")));
+      pendingHeading = null;
+      return;
+    }
+    const { lead, sections } = splitHrSections(cell);
+    if (lead.some((node) => node.textContent.trim() || node.querySelector?.("img"))) {
+      const content = doc.createElement("div");
+      content.className = "wiki-sidebar-content";
+      lead.forEach((node) => content.appendChild(node));
+      body.appendChild(content);
+    }
+    sections.forEach(({ heading, nodes }) => {
+      const content = doc.createElement("div");
+      nodes.forEach((node) => content.appendChild(node));
+      addSection(heading, content);
+    });
+  });
+
+  series.appendChild(body);
+  table.replaceWith(series);
+}
+
+// startOpen: mount with the URL input open (the panel's "Wiki" button renders this section to add a link)
+export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange, startOpen = false, onCancelAdd }) {
   const { t } = useTranslation("timeline");
   const [wikiContent, setWikiContent] = useState("");
   const [isWikiLoading, setIsWikiLoading] = useState(false);
@@ -439,18 +574,7 @@ export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange,
     try { articleHost = new URL(parsedWiki.host).hostname; } catch { /* invalid host */ }
   }
 
-  if (!wikiUrl && !isWikiUrlInputOpen) {
-    if (compactAdd) return null;
-    return (
-      <button type="button" className="note-create-card" onClick={handleOpenWikiInput}>
-        <div className="note-create-card-icon"><BookOpen size={18} /></div>
-        <div className="note-create-card-text">
-          <span className="note-create-card-title">{t("wiki.add.title", "Add wiki")}</span>
-          <span className="note-create-card-subtitle">{t("wiki.add.subtitle", "Link a MediaWiki article or section")}</span>
-        </div>
-      </button>
-    );
-  }
+  if (!wikiUrl && !isWikiUrlInputOpen) return null;
 
   // Boxed with a header to match the note and sources sections
   return (

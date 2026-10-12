@@ -348,8 +348,7 @@
   "untitledElement": "(untitled)",
   "wiki": {
     "add": {
-      "subtitle": "Link a MediaWiki article or section",
-      "title": "Add wiki"
+      "subtitle": "Link a MediaWiki article or section"
     },
     "errors": {
       "enterValidUrl": "Enter a valid MediaWiki URL (e.g., https://en.wikipedia.org/wiki/Ancient_Greece)",

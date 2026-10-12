@@ -227,6 +227,11 @@
 
 /* Wikipedia rendered content */
 .wiki-render {
+  /* Box colours for infoboxes, the series box, images and tables, matching the website demo:
+     a light link-colour tint that blends into the panel, with link-coloured border and lines */
+  --wiki-box-bg: color-mix(in srgb, var(--link-color) 6%, transparent);
+  --wiki-box-border: color-mix(in srgb, var(--link-color) 30%, transparent);
+  --wiki-box-line: color-mix(in srgb, var(--link-color) 20%, transparent);
   margin-top: 0;
   font-size: var(--text-sm);
   color: var(--text-primary);
@@ -315,9 +320,9 @@
 .wiki-render figure {
   margin: 0.7rem auto;
   padding: 6px;
-  border: 1px solid color-mix(in srgb, var(--accent-color), transparent 30%);
+  border: 1px solid var(--wiki-box-border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--inset-bg), transparent 20%);
+  background: var(--wiki-box-bg);
   text-align: center;
 }
 
@@ -341,19 +346,20 @@
 
 .wiki-render th,
 .wiki-render td {
-  border: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 8%);
+  border: 1px solid var(--wiki-box-line);
   padding: 5px 7px;
   text-align: left;
   vertical-align: top;
 }
 
 .wiki-render th {
-  background: var(--inset-bg);
+  background: var(--wiki-box-bg);
   font-weight: 600;
 }
 
-.wiki-render tr:nth-child(even) td {
-  background: var(--inset-bg);
+/* Infoboxes are label/value rows, not data tables, so they don't get striped */
+.wiki-render table:not(.infobox) tr:nth-child(even) td {
+  background: var(--wiki-box-bg);
 }
 
 .wiki-render ul,
@@ -463,23 +469,22 @@
   float: none;
   width: 100%;
   margin: 0.75rem 0;
-  background: var(--inset-bg);
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 5%);
+  background: var(--wiki-box-bg);
+  border-radius: 8px;
+  border: 1px solid var(--wiki-box-border);
   overflow: hidden;
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent-color), transparent 10%);
 }
 
 .wiki-render .infobox th,
 .wiki-render .infobox td {
-  border-color: color-mix(in srgb, var(--accent-color), var(--text-primary) 8%);
-  background: var(--inset-bg);
+  border-color: var(--wiki-box-line);
+  background: transparent;
   vertical-align: top;
   padding: 6px 8px;
 }
 
 .wiki-render .infobox th {
-  background: var(--inset-bg);
+  background: transparent;
   font-weight: 700;
 }
 
@@ -488,8 +493,8 @@
   font-size: var(--text-sm);
   padding: 8px 10px;
   text-align: left;
-  background: var(--inset-bg);
-  border-bottom: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 8%);
+  background: transparent;
+  border-bottom: 1px solid var(--wiki-box-border);
 }
 
 .wiki-render .infobox img {
@@ -519,7 +524,7 @@
 
 .wiki-render .infobox .infobox-label,
 .wiki-render .infobox th[scope="row"] {
-  width: 34%;
+  width: 30%;
   font-weight: 700;
   color: var(--ui-muted);
 }
@@ -559,87 +564,93 @@
   color: var(--text-subtle);
 }
 
-.wiki-render .sidebar {
-  float: none;
-  width: 100%;
+/* "Part of a series" sidebars are rebuilt by collapseSeriesSidebar() in WikiSection.jsx
+   into one closed <details>; sections inside reuse .wiki-sidebar-section below */
+.wiki-render .wiki-series {
   margin: 0.75rem 0;
-  background: var(--inset-bg);
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 5%);
+  background: var(--wiki-box-bg);
+  border-radius: 8px;
+  border: 1px solid var(--wiki-box-border);
   overflow: hidden;
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent-color), transparent 10%);
-  border-collapse: separate !important;
-  border-spacing: 0;
   font-size: var(--text-xs);
 }
 
-.wiki-render .sidebar td,
-.wiki-render .sidebar th {
-  border: none !important;
-  background: transparent !important;
-  padding: 0;
-}
-
-.wiki-render .sidebar-pretitle {
-  display: block;
-  text-align: center;
-  font-size: var(--text-2xs);
+.wiki-render .wiki-series-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
   color: var(--text-subtle);
-  padding: 8px 10px 2px;
+  line-height: 1.4;
 }
 
-.wiki-render .sidebar-title-with-pretitle {
-  display: block;
-  text-align: center;
-  font-weight: 700;
-  font-size: var(--text-sm);
-  padding: 4px 10px 8px;
+.wiki-render .wiki-series-summary strong {
   color: var(--text-primary);
-  border-bottom: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 8%);
 }
 
-.wiki-render .sidebar-image {
-  display: block;
-  text-align: center;
-  padding: 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 8%);
-}
-
-.wiki-render .sidebar-content {
-  display: block;
-  border-top: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 6%);
-  padding: 0;
-}
-
-.wiki-render .sidebar-below {
-  display: block;
-  text-align: center;
-  font-size: var(--text-2xs);
-  color: var(--text-subtle);
-  padding: 6px;
-  border-top: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 8%);
-}
-
-.wiki-render .sidebar-navbar {
+.wiki-render .wiki-series-summary::-webkit-details-marker {
   display: none;
 }
 
-.wiki-render .wiki-sidebar-section {
-  border-top: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 6%);
+.wiki-render .wiki-series-summary::after {
+  content: "[show]";
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: var(--text-2xs);
+  color: var(--link-color);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
+.wiki-render details[open] > .wiki-series-summary::after {
+  content: "[hide]";
+}
+
+.wiki-render .wiki-series-body {
+  border-top: 1px solid var(--wiki-box-border);
+  line-height: 1.5;
+}
+
+.wiki-render .wiki-series-image {
+  text-align: center;
+  padding: 8px;
+}
+
+.wiki-render .wiki-series-image img {
+  max-height: 160px;
+  width: auto;
+}
+
+.wiki-render .wiki-series-body .wiki-sidebar-content ul,
+.wiki-render .wiki-series-body .wiki-sidebar-content ol {
+  margin: 0 0 0.25rem 1rem;
+}
+
+.wiki-render .wiki-sidebar-section {
+  border-top: 1px solid var(--wiki-box-line);
+}
+
+/* Styled like the infobox row labels: muted bold text, divider lines, no shaded bar */
 .wiki-render .wiki-sidebar-summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
   font-size: var(--text-xs);
-  padding: 5px 10px;
-  background: color-mix(in srgb, var(--ui-muted), transparent 88%);
-  color: var(--text-primary);
+  padding: 6px 10px;
+  color: var(--ui-muted);
   list-style: none;
   user-select: none;
+  transition: color 0.12s ease;
+}
+
+.wiki-render .wiki-sidebar-summary:hover,
+.wiki-render details[open] > .wiki-sidebar-summary {
+  color: var(--text-primary);
 }
 
 .wiki-render .wiki-sidebar-summary::-webkit-details-marker {
@@ -649,7 +660,7 @@
 .wiki-render .wiki-sidebar-summary::after {
   content: "[show]";
   font-size: var(--text-2xs);
-  color: #3366cc;
+  color: var(--link-color);
   font-weight: normal;
   white-space: nowrap;
   margin-left: 6px;
@@ -677,7 +688,7 @@
 .wiki-toggle-btn {
   background: none;
   border: none;
-  color: #3366cc;
+  color: var(--link-color);
   cursor: pointer;
   font-size: var(--text-2xs);
   padding: 0;
@@ -710,8 +721,8 @@
 .wiki-render .thumbinner {
   width: 100% !important;
   max-width: 100%;
-  background: var(--inset-bg);
-  border: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 8%);
+  background: var(--wiki-box-bg);
+  border: 1px solid var(--wiki-box-border);
   border-radius: 8px;
   padding: 6px;
 }
@@ -771,4 +782,14 @@
   padding: 0;
   border: none;
   background: none;
+}
+
+/* List items that only wrap a nested list (set in sanitizeWikiHtml) get no bullet of their own */
+.wiki-render li.wiki-li-bare {
+  list-style: none;
+}
+
+/* Clicking [show]/[hide] shouldn't leave a focus ring; keyboard focus still shows one */
+.wiki-render summary:focus:not(:focus-visible) {
+  outline: none;
 }

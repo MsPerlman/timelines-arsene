@@ -1630,12 +1630,6 @@
   text-align: center;
 }
 
-.note-add-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .note-add-dropdown-wrap {
   position: relative;
 }
@@ -1674,55 +1668,6 @@
 
 .note-add-dropdown-item:hover {
   background: var(--accent-color);
-}
-
-.note-create-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 12px;
-  background: color-mix(in srgb, var(--accent-color), var(--surface) 75%);
-  border: 1px solid color-mix(in srgb, var(--accent-color), var(--text-primary) 20%);
-  border-radius: 10px;
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-  transition: background 0.1s;
-}
-
-.note-create-card:hover {
-  background: color-mix(in srgb, var(--accent-color), var(--surface) 55%);
-}
-
-.note-create-card-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  background: var(--surface);
-  border: 1px solid var(--accent-color);
-  border-radius: 8px;
-  color: var(--text-primary);
-  flex-shrink: 0;
-}
-
-.note-create-card-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.note-create-card-title {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.note-create-card-subtitle {
-  font-size: var(--text-xs);
-  color: var(--ui-muted);
 }
 
 .note-toolbar {
