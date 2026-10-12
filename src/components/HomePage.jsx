@@ -464,6 +464,7 @@ export default function HomePage({
       if (!isDraggingSidebar.current) return;
       isDraggingSidebar.current = false;
       document.body.classList.remove("dragging");
+      document.querySelectorAll(".home-sidebar-resizer.is-dragging").forEach((el) => el.classList.remove("is-dragging"));
       setHomeSidebarWidth((w) => { saveAppSettings({ homeSidebarWidth: w }); return w; });
     };
     window.addEventListener("mousemove", onMove);
@@ -1556,6 +1557,7 @@ export default function HomePage({
               onMouseDown={(e) => {
                 e.preventDefault();
                 isDraggingSidebar.current = true;
+                e.currentTarget.classList.add("is-dragging");
                 document.body.classList.add("dragging");
               }}
             />

@@ -95,6 +95,7 @@
     "sizeLower": "size",
     "startDate": "Start Date",
     "tags": "Tags",
+    "thumbnail": "Thumbnail",
     "time": "Time"
   },
   "filters": {
@@ -149,7 +150,6 @@
     "current": "Icon: {{name}}",
     "noMatches": "No icons match",
     "none": "No icon",
-    "remove": "Remove icon",
     "search": "Search icons..."
   },
   "lineStyles": {
@@ -162,8 +162,6 @@
     "escToCancel": "Esc to cancel"
   },
   "noteEditor": {
-    "addSubtitle": "Attach a note to this event",
-    "addTitle": "Add note",
     "bold": "Bold",
     "confirmDelete": "Delete this note? This cannot be undone.",
     "delete": "Delete Note",
@@ -187,6 +185,15 @@
     "inherit": "Inherit"
   },
   "rightPanel": {
+    "addProperty": "Add property",
+    "approxToggleHint": "prefixes the displayed date with \"{{marker}}\"",
+    "attach": {
+      "note": "Note",
+      "noteHint": "Write a markdown note, or link an existing one",
+      "sourceHint": "Cite a book, article or link",
+      "sources": "Sources",
+      "wiki": "Wiki"
+    },
     "branchFrom": "Branch from",
     "closePanel": "Close panel",
     "dateOptions": {
@@ -194,6 +201,7 @@
       "title": "Pick a date, or insert a dynamic date"
     },
     "dropImage": "Drop image or click to upload",
+    "dropToSetThumbnail": "Drop to set thumbnail",
     "dynamicDates": {
       "thisMonth": "This month",
       "thisYear": "This year",
@@ -205,15 +213,18 @@
     "noMatchingTimes": "No matching times",
     "noSelection": "No Selection",
     "pasteImageUrl": "Paste image URL",
+    "propertyGroups": {
+      "appearance": "Appearance",
+      "date": "Date",
+      "location": "Location",
+      "visibility": "Visibility"
+    },
     "removeBreak": "Remove break",
+    "removeProperty": "Remove property",
     "revertInherited": "Revert to inherited",
     "searchSpan": "Search span...",
-    "sections": {
-      "details": "Details",
-      "display": "Display",
-      "notes": "Notes & Sources"
-    },
-    "timePlaceholder": "e.g. 3:30 PM"
+    "timePlaceholder": "e.g. 3:30 PM",
+    "uploadImage": "Upload image"
   },
   "search": {
     "noResults": "No results for “{{query}}”",

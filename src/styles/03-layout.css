@@ -91,6 +91,16 @@
   z-index: 50;
 }
 
+/* Keeps the 6px grab area but only paints a 2px line down the middle;
+   is-dragging holds it on while the pointer outruns the handle mid-drag */
+.overlay-resizer:hover,
+.overlay-resizer.is-dragging {
+  padding: 0 2px;
+  box-sizing: border-box;
+  background: var(--link-color);
+  background-clip: content-box;
+}
+
 .app-content,
 .timeline-scroll {
   position: relative;

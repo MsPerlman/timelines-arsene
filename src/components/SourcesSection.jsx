@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, ChevronDown, Pencil, Trash2, ExternalLink } from "lucide-react";
 
-export default function SourcesSection({ sources, sourceLink, isEditMode, onSourcesChange }) {
+export default function SourcesSection({ sources, sourceLink, isEditMode, onSourcesChange, startFormOpen = false, onCancelAdd }) {
   const { t } = useTranslation("timeline");
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(startFormOpen);
   const [editingIndex, setEditingIndex] = useState(null);
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
@@ -54,6 +54,12 @@ export default function SourcesSection({ sources, sourceLink, isEditMode, onSour
   };
 
   const cancelEdit = () => { setEditingIndex(null); resetForm(); };
+
+  const closeAddForm = () => {
+    setIsFormOpen(false);
+    resetForm();
+    if (!srcList.length) onCancelAdd?.();
+  };
 
   if (!isEditMode) {
     if (!srcList.length) return null;
@@ -145,18 +151,18 @@ export default function SourcesSection({ sources, sourceLink, isEditMode, onSour
         <div className="source-add-form">
           <div className="source-field">
             <label className="source-field-label">{t("sources.fields.title", "Title")}</label>
-            <input type="text" className="source-field-input" placeholder={t("sources.fields.titlePlaceholder", "Source title")} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setIsFormOpen(false); }} autoFocus />
+            <input type="text" className="source-field-input" placeholder={t("sources.fields.titlePlaceholder", "Source title")} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") closeAddForm(); }} autoFocus />
           </div>
           <div className="source-field">
             <label className="source-field-label">{t("sources.fields.url", "URL (optional)")}</label>
-            <input type="text" className="source-field-input" placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setIsFormOpen(false); }} />
+            <input type="text" className="source-field-input" placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") closeAddForm(); }} />
           </div>
           <div className="source-field">
             <label className="source-field-label">{t("sources.fields.description", "Description (optional)")}</label>
-            <textarea className="source-field-input source-field-textarea" placeholder={t("sources.fields.descriptionPlaceholder", "Author, year, notes…")} value={description} onChange={(e) => setDescription(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setIsFormOpen(false); }} rows={3} />
+            <textarea className="source-field-input source-field-textarea" placeholder={t("sources.fields.descriptionPlaceholder", "Author, year, notes…")} value={description} onChange={(e) => setDescription(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") closeAddForm(); }} rows={3} />
           </div>
           <div className="source-add-actions">
-            <button type="button" className="btn-secondary" onClick={() => { setIsFormOpen(false); resetForm(); }}>{t("common:actions.cancel", "Cancel")}</button>
+            <button type="button" className="btn-secondary" onClick={closeAddForm}>{t("common:actions.cancel", "Cancel")}</button>
             <button type="button" className="btn-primary" onClick={handleAdd}>{t("sources.add", "Add source")}</button>
           </div>
         </div>

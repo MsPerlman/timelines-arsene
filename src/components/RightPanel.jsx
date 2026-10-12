@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Maximize2, Minimize2, Underline, Link, Trash2, Unlink, ChevronLeft, ChevronRight, ChevronDown, Pencil, ExternalLink, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X } from "lucide-react";
+import { Maximize2, Minimize2, Underline, Link, Trash2, Unlink, ChevronLeft, ChevronRight, ChevronDown, Pencil, ExternalLink, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X, Image as ImageIcon, Shapes, MoveVertical, Minus, SquareDashed, CalendarOff, EyeOff, ArrowLeftToLine, ArrowRightToLine } from "lucide-react";
 import NoteEditor from "./NoteEditor";
 import WikiSection from "./WikiSection";
 import SourcesSection from "./SourcesSection";
@@ -65,17 +65,8 @@ import ColorPicker from "./ColorPicker";
 
 
 
-function SectionHeader({ title, isOpen, onToggle, summary }) {
-  return (
-    <button type="button" className="edit-section-header" onClick={onToggle}>
-      <ChevronDown size={15} className={`edit-section-header-chevron${isOpen ? "" : " is-collapsed"}`} />
-      <span className="edit-section-header-title">{title}</span>
-      {!isOpen && summary && (
-        <span className="edit-section-header-summary">{summary}</span>
-      )}
-    </button>
-  );
-}
+// Order of the groups in the "Add property" menu
+const PROPERTY_GROUPS = ["location", "appearance", "visibility", "date"];
 
 const EVENT_STROKE_STYLE_OPTIONS = [
   { value: "solid", label: "Solid" },
@@ -124,12 +115,15 @@ export default function RightPanel({
   const [formData, setFormData] = useState(null);
   const [validationErrors, setValidationErrors] = useState([]);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [isDragOver, setIsDragOver] = useState(false);
+  const [isPanelDragOver, setIsPanelDragOver] = useState(false);
   const [isThumbnailUrlMode, setIsThumbnailUrlMode] = useState(false);
   const [thumbnailUrlInput, setThumbnailUrlInput] = useState("");
-  const [isDetailsOpen, setIsDetailsOpen] = useState(true);
-  const [isDisplayOpen, setIsDisplayOpen] = useState(true);
-  const [isNotesOpen, setIsNotesOpen] = useState(true);
+  // optional properties the user added this selection, shown even while still unset
+  const [addedProps, setAddedProps] = useState([]);
+  const [isAddPropOpen, setIsAddPropOpen] = useState(false);
+  const [openSelectField, setOpenSelectField] = useState(null);
+  const [isWikiAdding, setIsWikiAdding] = useState(false);
+  const [isSourceAdding, setIsSourceAdding] = useState(false);
 
   const {
     noteInitialContent,
@@ -183,6 +177,7 @@ export default function RightPanel({
   const [tagQuery, setTagQuery] = useState("");
   const [isTagMenuOpen, setIsTagMenuOpen] = useState(false);
   const tagMenuTimeoutRef = useRef(null);
+  const tagInputRef = useRef(null);
   const [isNoteCollapsed, setIsNoteCollapsed] = useState(false);
   const [thumbnailMeta, setThumbnailMeta] = useState(null);
   const panelRef = useRef(null);
@@ -484,7 +479,7 @@ export default function RightPanel({
 
   useEffect(() => {
     const anyOpen = isSpanParentMenuOpen || isMergeParentMenuOpen ||
-      isParentMenuOpen || isTagMenuOpen || isSpanRelationOpen;
+      isParentMenuOpen || isTagMenuOpen || isSpanRelationOpen || isAddPropOpen || openSelectField;
     if (!anyOpen) return;
     const handleKeyDown = (e) => {
       if (e.key !== "Escape") return;
@@ -493,10 +488,12 @@ export default function RightPanel({
       setIsParentMenuOpen(false);
       setIsTagMenuOpen(false);
       setIsSpanRelationOpen(false);
+      setIsAddPropOpen(false);
+      setOpenSelectField(null);
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isSpanParentMenuOpen, isMergeParentMenuOpen, isParentMenuOpen, isTagMenuOpen, isSpanRelationOpen]);
+  }, [isSpanParentMenuOpen, isMergeParentMenuOpen, isParentMenuOpen, isTagMenuOpen, isSpanRelationOpen, isAddPropOpen, openSelectField]);
 
   useEffect(() => {
     if (selectedElement) {
@@ -519,6 +516,10 @@ export default function RightPanel({
         setSpanRelationType(selectedElement.extendFrom ? "extend" : "branch");
         setIsThumbnailUrlMode(false);
         setThumbnailUrlInput("");
+        setAddedProps([]);
+        setIsAddPropOpen(false);
+        setIsWikiAdding(false);
+        setIsSourceAdding(false);
         if (!shouldPreserveEditMode) {
           setIsEditMode(false);
           setSpanParentQuery("");
@@ -585,7 +586,6 @@ export default function RightPanel({
     setIsEditMode(true);
     if (editRequestFocus) {
       pendingFocusRef.current = editRequestFocus;
-      if (editRequestFocus === "title") setIsDetailsOpen(true);
     }
     onEditRequestHandled?.();
   }, [selectedElement, editRequestId, editRequestFocus, onEditRequestHandled, readOnly]);
@@ -598,7 +598,7 @@ export default function RightPanel({
     pendingFocusRef.current = null;
     el.focus();
     el.select();
-  }, [isEditMode, isDetailsOpen, formData?.id]);
+  }, [isEditMode, formData?.id]);
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -742,33 +742,67 @@ export default function RightPanel({
   }, [mergeParentCandidates, mergeParentQuery]);
 
 
-  const renderEventStrokeStyleControl = (field, currentValue, ariaLabel, variant) => (
-    <div className="event-style-toggle" role="group" aria-label={ariaLabel}>
-      {EVENT_STROKE_STYLE_OPTIONS.map((option) => {
-        const isActive = (currentValue || "solid") === option.value;
-        return (
-          <button
-            key={`${field}-${option.value}`}
-            type="button"
-            className={`event-style-option${isActive ? " is-active" : ""}`}
-            aria-pressed={isActive ? "true" : "false"}
-            aria-label={strokeStyleLabels[option.value] || option.label}
-            title={strokeStyleLabels[option.value] || option.label}
-            onClick={() => {
-              const next = { ...formData, [field]: option.value };
-              setFormData(next);
-              commitDraft(next);
-            }}
-          >
-            <span
-              className={`event-style-preview event-style-preview-${variant} event-style-preview-${option.value}`}
-              aria-hidden="true"
-            />
-          </button>
-        );
-      })}
-    </div>
-  );
+  // Dropdown that opens the panel's own menu (not the OS-native select list), so every
+  // picker in the panel opens the same kind of list
+  const renderSelectMenu = ({ field, value, options, onPick, ariaLabel, id }) => {
+    const isOpen = openSelectField === field;
+    const current = options.find((o) => o.value === value) ?? options[0];
+    return (
+      <div className="edit-select-wrap select-menu">
+        <button
+          type="button"
+          id={id}
+          className="edit-select select-menu-btn"
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          aria-label={ariaLabel}
+          onClick={() => setOpenSelectField((v) => (v === field ? null : field))}
+        >
+          {current?.preview}
+          <span className="select-menu-label">{current?.label}</span>
+        </button>
+        {isOpen && (
+          <>
+            <div className="note-add-dropdown-backdrop" onClick={() => setOpenSelectField(null)} />
+            <div className="span-relation-dropdown-menu select-menu-list" role="listbox">
+              {options.map((option) => (
+                <button
+                  key={`${field}-${option.value}`}
+                  type="button"
+                  role="option"
+                  aria-selected={value === option.value}
+                  className={`span-relation-dropdown-item select-menu-item${value === option.value ? " active" : ""}`}
+                  onClick={() => {
+                    onPick(option.value);
+                    setOpenSelectField(null);
+                  }}
+                >
+                  {option.preview}
+                  <span className="select-menu-label">{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderEventStrokeStyleControl = (field, currentValue, ariaLabel, variant) => renderSelectMenu({
+    field,
+    value: currentValue || "solid",
+    ariaLabel,
+    options: EVENT_STROKE_STYLE_OPTIONS.map((option) => ({
+      value: option.value,
+      label: strokeStyleLabels[option.value] || option.label,
+      preview: <span className={`event-style-preview event-style-preview-${variant} event-style-preview-${option.value}`} aria-hidden="true" />,
+    })),
+    onPick: (picked) => {
+      const next = { ...formData, [field]: picked };
+      setFormData(next);
+      commitDraft(next);
+    },
+  });
 
   const tagCandidates = useMemo(() => {
     if (!timelineData) return [];
@@ -887,25 +921,31 @@ export default function RightPanel({
     }, 120);
   };
 
-  const addTag = (tag) => {
-    const normalized = normalizeTagValue(tag);
-    if (!normalized) return;
-    if ([...normalized].length > TAG_MAX_LENGTH) {
-      pushValidationError(`Tags must be ${TAG_MAX_LENGTH} characters or fewer.`);
-      return;
-    }
-    if (!isValidTagValue(normalized)) {
-      pushValidationError('Tags cannot contain , # | ( ) ~ " < >');
-      return;
-    }
+  // Takes one tag or a comma-separated list ("war, politics, rome"); commas can't be part of a tag.
+  // Adds them all in one commit, or none if any is invalid. Returns whether it succeeded.
+  const addTags = (raw, { keepOpen = false } = {}) => {
     const existing = Array.isArray(formData.tags) ? formData.tags : [];
-    if (existing.includes(normalized)) return;
-    const nextTags = [...existing, normalized];
+    const nextTags = [...existing];
+    for (const part of String(raw).split(",")) {
+      const normalized = normalizeTagValue(part);
+      if (!normalized) continue;
+      if ([...normalized].length > TAG_MAX_LENGTH) {
+        pushValidationError(`Tags must be ${TAG_MAX_LENGTH} characters or fewer.`);
+        return false;
+      }
+      if (!isValidTagValue(normalized)) {
+        pushValidationError('Tags cannot contain , # | ( ) ~ " < >');
+        return false;
+      }
+      if (!nextTags.includes(normalized)) nextTags.push(normalized);
+    }
     if (validationErrors.length) setValidationErrors([]);
-    setFormData((prev) => ({ ...prev, tags: nextTags }));
-    commitDraft({ ...formData, tags: nextTags });
-    setTagQuery("");
-    setIsTagMenuOpen(false);
+    if (nextTags.length > existing.length) {
+      setFormData((prev) => ({ ...prev, tags: nextTags }));
+      commitDraft({ ...formData, tags: nextTags });
+    }
+    if (!keepOpen) setIsTagMenuOpen(false);
+    return true;
   };
 
   const removeTag = (tag) => {
@@ -921,6 +961,7 @@ export default function RightPanel({
       if (nextSourceLink) next.sourceLink = nextSourceLink;
       else delete next.sourceLink;
     }
+    if (!nextSources?.length) setIsSourceAdding(false);
     setFormData(next);
     commitDraft(next);
   };
@@ -983,6 +1024,7 @@ export default function RightPanel({
       next.wikiUrl = newUrl;
     } else {
       delete next.wikiUrl;
+      setIsWikiAdding(false);
     }
     setFormData(next);
     commitDraft(next);
@@ -990,6 +1032,51 @@ export default function RightPanel({
 
   const showLegacyBreaks = timelineData?.file?.allowLegacyBreaks === true;
   const approxMarker = (timelineData?.file?.approxID || "").trim() || DEFAULT_APPROX_LABEL;
+
+  // Enter in a plain field jumps to the next one (name → date → …); Shift+Enter keeps a newline in the name
+  const handleEnterToNext = (e) => {
+    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    const fields = [...(panelRef.current?.querySelectorAll("[data-enter-nav]") ?? [])];
+    const next = fields[fields.indexOf(e.currentTarget) + 1];
+    if (!next) {
+      e.currentTarget.blur();
+      return;
+    }
+    next.focus();
+    next.select?.();
+  };
+
+  const applyDroppedThumbnail = async (file) => {
+    if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'].includes(ext)) return;
+    const filePath = window.electron?.getPathForFile?.(file) ?? file.path;
+    const url = await handleDropThumbnail(filePath);
+    if (!url) return;
+    const next = { ...formData, thumbnail: url };
+    setFormData(next);
+    commitDraft(next);
+  };
+
+  const renderApproxToggle = (field, label) => {
+    const isOn = formData[field] === true;
+    return (
+      <button
+        type="button"
+        className={`edit-approx-toggle${isOn ? " is-active" : ""}`}
+        aria-pressed={isOn}
+        aria-label={label}
+        title={`${label}: ${t("rightPanel.approxToggleHint", "prefixes the displayed date with \"{{marker}}\"", { marker: approxMarker })}`}
+        onClick={() => {
+          const next = { ...formData };
+          if (isOn) { delete next[field]; } else { next[field] = true; }
+          setFormData(next);
+          commitDraft(next);
+        }}
+      >≈</button>
+    );
+  };
 
   if (!selectedElement || !formData) {
     return (
@@ -1001,11 +1088,97 @@ export default function RightPanel({
     );
   }
 
+  // Optional properties stay out of the edit form until they have a value or are added
+  const isEvent = formData.type === "event";
+  const isSpan = formData.type === "span";
+  const isEra = formData.type === "era";
+  const optionalProps = [
+    { key: "coordinates", icon: MapPin, group: "location", label: t("fields.coordinates", "Coordinates"), available: !!timelineData?.file?.useMaps, isSet: formData.lat != null || formData.lng != null },
+    { key: "thumbnail", icon: ImageIcon, group: "appearance", label: t("fields.thumbnail", "Thumbnail"), available: isEvent, isSet: !!formData.thumbnail },
+    { key: "icon", icon: Shapes, group: "appearance", label: t("fields.icon", "Icon"), available: true, isSet: !!formData.icon },
+    { key: "size", icon: MoveVertical, group: "appearance", label: t("fields.size", "Size"), available: isSpan || isEra, isSet: !!(isSpan ? formData.spanSize : formData.eraSize) },
+    { key: "lineStyle", icon: Minus, group: "appearance", label: t("fields.lineStyle", "Line Style"), available: isEvent, isSet: !!formData.eventLineStyle && formData.eventLineStyle !== "solid" },
+    { key: "borderStyle", icon: SquareDashed, group: "appearance", label: t("fields.borderStyle", "Border Style"), available: isEvent, isSet: !!formData.eventBorderStyle && formData.eventBorderStyle !== "solid" },
+    { key: "hideDate", icon: CalendarOff, group: "visibility", label: t("fields.hideDate", "Hide Date"), available: isEvent || isSpan, isSet: formData.hideYears === true },
+    { key: "hideDetails", icon: EyeOff, group: "visibility", label: t("fields.hideDetails", "Hide Details"), available: isSpan || isEra, isSet: formData.hideDetails === true || (formData.hideName === true && formData.hideYears === true) },
+    { key: "fuzzyStart", icon: ArrowLeftToLine, group: "date", label: t("fields.fuzzyStart", "Fuzzy Start"), available: isEra, isSet: formData.fuzzyStart === true },
+    { key: "fuzzyEnd", icon: ArrowRightToLine, group: "date", label: t("fields.fuzzyEnd", "Fuzzy End"), available: isEra, isSet: formData.fuzzyEnd === true },
+  ].filter((p) => p.available);
+  // What clearing each optional property resets; solid is the stored default for event strokes
+  const clearPropFields = {
+    coordinates: { delete: ["lat", "lng"] },
+    thumbnail: { delete: ["thumbnail", "thumbnailStyle", "thumbnailFit"] },
+    icon: { delete: ["icon"] },
+    size: { delete: ["spanSize", "eraSize"] },
+    lineStyle: { set: { eventLineStyle: "solid" } },
+    borderStyle: { set: { eventBorderStyle: "solid" } },
+    hideDate: { delete: ["hideYears"] },
+    hideDetails: { delete: ["hideDetails", "hideName"] },
+    fuzzyStart: { delete: ["fuzzyStart"] },
+    fuzzyEnd: { delete: ["fuzzyEnd"] },
+  };
+  const removeProp = (key) => {
+    const { delete: fields = [], set = {} } = clearPropFields[key] ?? {};
+    const next = { ...formData, ...set };
+    fields.forEach((f) => { delete next[f]; });
+    setFormData(next);
+    commitDraft(next);
+    setAddedProps((prev) => prev.filter((k) => k !== key));
+  };
+  const renderRemoveProp = (key) => (
+    <button
+      type="button"
+      className="edit-row-remove"
+      title={t("rightPanel.removeProperty", "Remove property")}
+      aria-label={t("rightPanel.removeProperty", "Remove property")}
+      onClick={() => removeProp(key)}
+    ><X size={12} /></button>
+  );
+  const isPropVisible = (key) => addedProps.includes(key) || optionalProps.some((p) => p.key === key && p.isSet);
+  const hiddenProps = optionalProps.filter((p) => !isPropVisible(p.key));
+  const propertyGroupLabels = {
+    location: t("rightPanel.propertyGroups.location", "Location"),
+    appearance: t("rightPanel.propertyGroups.appearance", "Appearance"),
+    visibility: t("rightPanel.propertyGroups.visibility", "Visibility"),
+    date: t("rightPanel.propertyGroups.date", "Date"),
+  };
+  const hasSources = Array.isArray(formData.sources) && formData.sources.length > 0;
+  const useWiki = !!timelineData?.file?.useWiki;
+  const showWikiAttach = useWiki && !formData.wikiUrl && !isWikiAdding;
+  const showSourceAttach = !hasSources && !isSourceAdding;
+
+  // While editing an event, an image dropped anywhere on the panel becomes its thumbnail
+  const acceptsImageDrop = isEditMode && isEvent && !readOnly;
+  const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+  const panelDropHandlers = acceptsImageDrop ? {
+    onDragOver: (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      setIsPanelDragOver(true);
+    },
+    onDragLeave: (e) => {
+      if (!e.currentTarget.contains(e.relatedTarget)) setIsPanelDragOver(false);
+    },
+    onDrop: (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      setIsPanelDragOver(false);
+      applyDroppedThumbnail(e.dataTransfer.files[0]);
+    },
+  } : {};
+
   return (
     <div
       ref={panelRef}
-      className={`right-panel ${isMaximized ? "is-maximized" : ""}`}
+      className={`right-panel ${isMaximized ? "is-maximized" : ""}${isPanelDragOver ? " is-image-drag-over" : ""}`}
+      {...panelDropHandlers}
     >
+      {isPanelDragOver && (
+        <div className="right-panel-drop-overlay" aria-hidden="true">
+          <ImagePlus size={28} strokeWidth={1.5} />
+          <span>{t("rightPanel.dropToSetThumbnail", "Drop to set thumbnail")}</span>
+        </div>
+      )}
       <div className="right-panel-header">
         <span className="rp-type-label">{formData.type.charAt(0).toUpperCase() + formData.type.slice(1)}</span>
         <div className="right-panel-actions">
@@ -1274,15 +1447,6 @@ export default function RightPanel({
               </div>
             )}
 
-            <SectionHeader
-              title={t("rightPanel.sections.details", "Details")}
-              isOpen={isDetailsOpen}
-              onToggle={() => setIsDetailsOpen(v => !v)}
-              summary={formData.title || ""}
-            />
-
-            {isDetailsOpen && <>
-
             {/* Title */}
             <div className="form-group">
               <div className="edit-row edit-row-title">
@@ -1291,6 +1455,8 @@ export default function RightPanel({
                 <textarea
                   ref={titleTextareaRef}
                   id="title"
+                  data-enter-nav
+                  onKeyDown={handleEnterToNext}
                   value={formData.title}
                   onChange={(e) => handleChange("title", e.target.value)}
                   onBlur={(e) => commitDraft({ ...formData, title: e.target.value })}
@@ -1309,6 +1475,8 @@ export default function RightPanel({
                   <input
                     id="description"
                     type="text"
+                    data-enter-nav
+                    onKeyDown={handleEnterToNext}
                     value={formData.description || ""}
                     onChange={(e) => handleChange("description", e.target.value)}
                     onBlur={(e) => commitDraft({ ...formData, description: e.target.value })}
@@ -1336,6 +1504,8 @@ export default function RightPanel({
                           {showTimeIcon && renderTimeIconButton("dateInput", "time", showCalendarInputIcon)}
                           <input
                             id="date"
+                            data-enter-nav
+                            onKeyDown={handleEnterToNext}
                             type="text"
                             inputMode="numeric"
                             value={formData.dateInput ?? ""}
@@ -1348,6 +1518,7 @@ export default function RightPanel({
                           />
                         </div>
                         {renderTimeChip("dateInput", "time")}
+                        {renderApproxToggle("approximate", t("fields.approximate", "Approximate"))}
                       </div>
                     );
                   })()}
@@ -1369,6 +1540,8 @@ export default function RightPanel({
                             {showTimeIcon && renderTimeIconButton("startInput", "startTime", showCalendarInputIcon)}
                             <input
                               id="start"
+                              data-enter-nav
+                              onKeyDown={handleEnterToNext}
                               type="text"
                               inputMode="numeric"
                               value={formData.startInput ?? ""}
@@ -1381,6 +1554,7 @@ export default function RightPanel({
                             />
                           </div>
                           {renderTimeChip("startInput", "startTime")}
+                          {renderApproxToggle("approxStart", t("fields.approximateStart", "Approximate Start"))}
                         </div>
                       );
                     })()}
@@ -1401,6 +1575,8 @@ export default function RightPanel({
                             <input
                               ref={endInputRef}
                               id="end"
+                              data-enter-nav
+                              onKeyDown={handleEnterToNext}
                               type="text"
                               inputMode="numeric"
                               value={formData.endInput ?? ""}
@@ -1413,6 +1589,7 @@ export default function RightPanel({
                             />
                           </div>
                           {renderTimeChip("endInput", "endTime")}
+                          {renderApproxToggle("approxEnd", t("fields.approximateEnd", "Approximate End"))}
                         </div>
                       );
                     })()}
@@ -1420,33 +1597,6 @@ export default function RightPanel({
                 </div>
               </>
             )}
-
-            {/* Approximate date marker — one flag per date, so a range can mark either end */}
-            {(formData.type === "event"
-              ? [{ field: "approximate", label: t("fields.approximate", "Approximate") }]
-              : [{ field: "approxStart", label: t("fields.approximateStart", "Approximate Start") }, { field: "approxEnd", label: t("fields.approximateEnd", "Approximate End") }]
-            ).map(({ field, label }) => (
-              <div className="form-group" key={field}>
-                <div className="edit-row" title={`Prefixes the displayed date with "${approxMarker}"`}>
-                  <label htmlFor={field}>{label}</label>
-                  <div className="edit-separator" />
-                  <label className="settings-toggle" style={{gridColumn: 2, justifySelf: 'end'}}>
-                    <input
-                      id={field}
-                      type="checkbox"
-                      checked={formData[field] === true}
-                      onChange={(e) => {
-                        const next = { ...formData };
-                        if (e.target.checked) { next[field] = true; } else { delete next[field]; }
-                        setFormData(next);
-                        commitDraft(next);
-                      }}
-                    />
-                    <span className="settings-toggle-slider" />
-                  </label>
-                </div>
-              </div>
-            ))}
 
             {/* Relations */}
             {(formData.type === "event" || formData.type === "span") && (
@@ -1646,30 +1796,41 @@ export default function RightPanel({
                   ))}
                   <div className="branch-picker tag-picker tag-edit-picker">
                     {!isTagMenuOpen && (
-                      <button type="button" className="tag-add-chip" onClick={() => { setIsTagMenuOpen(true); document.getElementById('tags')?.focus(); }}>
+                      <button type="button" className="tag-add-chip" onClick={() => {
+                        setIsTagMenuOpen(true);
+                        // the input is display:none until this render commits, so focus it on the next frame
+                        requestAnimationFrame(() => tagInputRef.current?.focus());
+                      }}>
                         + Add tag
                       </button>
                     )}
                     <input
+                      ref={tagInputRef}
                       id="tags"
                       type="text"
                       value={tagQuery}
                       onChange={(e) => {
-                        setTagQuery(e.target.value);
+                        const value = e.target.value;
                         setIsTagMenuOpen(true);
-                        if (validationErrors.length) setValidationErrors([]);
+                        // a comma finishes the tags before it (also covers pasting "a, b, c")
+                        const lastComma = value.lastIndexOf(",");
+                        if (lastComma !== -1 && addTags(value.slice(0, lastComma), { keepOpen: true })) {
+                          setTagQuery(value.slice(lastComma + 1).trimStart());
+                          return;
+                        }
+                        setTagQuery(value);
+                        if (lastComma === -1 && validationErrors.length) setValidationErrors([]);
                       }}
                       onFocus={() => { clearTimeout(tagMenuTimeoutRef.current); setIsTagMenuOpen(true); }}
                       onBlur={handleTagBlur}
                       placeholder={t("fields.addTag", "add tag...")}
                       className="tag-edit-input"
                       style={{display: isTagMenuOpen ? 'block' : 'none'}}
-                      maxLength={TAG_MAX_LENGTH}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
                           const trimmed = tagQuery.trim();
-                          if (trimmed) addTag(trimmed);
+                          if (trimmed && addTags(trimmed)) setTagQuery("");
                         }
                       }}
                     />
@@ -1682,7 +1843,7 @@ export default function RightPanel({
                             className="branch-suggestion-item"
                             onMouseDown={(e) => {
                               e.preventDefault();
-                              addTag(tag);
+                              if (addTags(tag)) setTagQuery("");
                             }}
                           >
                             <span className="branch-suggestion-title">{tag}</span>
@@ -1703,32 +1864,29 @@ export default function RightPanel({
                   <div className="edit-row">
                     <label htmlFor="groupId">{t("fields.group", "Group")}</label>
                     <div className="edit-separator" />
-                    <div className="edit-select-wrap">
-                      <select
-                        id="groupId"
-                        className="edit-select"
-                        value={formData.groupId ?? ""}
-                        onChange={(e) => {
-                          const val = e.target.value || null;
-                          const next = { ...formData, groupId: val };
-                          setFormData(next);
-                          commitDraft(next);
-                        }}
-                      >
-                        <option value="">{t("options.inherit", "Inherit")}</option>
-                        {groups.map((g) => (
-                          <option key={g.id} value={g.id}>{g.title || g.id}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {renderSelectMenu({
+                      field: "groupId",
+                      id: "groupId",
+                      value: formData.groupId ?? "",
+                      options: [
+                        { value: "", label: t("options.inherit", "Inherit") },
+                        ...groups.map((g) => ({ value: g.id, label: g.title || g.id })),
+                      ],
+                      onPick: (picked) => {
+                        const next = { ...formData, groupId: picked || null };
+                        setFormData(next);
+                        commitDraft(next);
+                      },
+                    })}
                   </div>
                 </div>
               );
             })()}
 
             {/* Map */}
-            {timelineData?.file?.useMaps && (
+            {isPropVisible("coordinates") && (
               <div className="form-group">
+                {renderRemoveProp("coordinates")}
                 <div className="edit-row">
                   <label>{t("fields.coordinates", "Coordinates")}</label>
                   <div className="edit-separator" />
@@ -1752,6 +1910,8 @@ export default function RightPanel({
                     <input
                       id="lat"
                       type="number"
+                      data-enter-nav
+                      onKeyDown={handleEnterToNext}
                       className="edit-input"
                       value={formData.lat ?? ""}
                       onChange={(e) => handleChange("lat", e.target.value === "" ? null : Number(e.target.value))}
@@ -1763,6 +1923,8 @@ export default function RightPanel({
                     <input
                       id="lng"
                       type="number"
+                      data-enter-nav
+                      onKeyDown={handleEnterToNext}
                       className="edit-input"
                       value={formData.lng ?? ""}
                       onChange={(e) => handleChange("lng", e.target.value === "" ? null : Number(e.target.value))}
@@ -1775,21 +1937,6 @@ export default function RightPanel({
               </div>
             )}
 
-            </>}
-
-            <SectionHeader
-              title={t("rightPanel.sections.display", "Display")}
-              isOpen={isDisplayOpen}
-              onToggle={() => setIsDisplayOpen(v => !v)}
-              summary={[
-                formData.thumbnail && "Image",
-                formData.icon && "Icon",
-                (formData.color || formData.spanSize || formData.eraSize || formData.eventLineStyle || formData.eventBorderStyle || formData.hideYears || formData.hideDetails || formData.fuzzyStart || formData.fuzzyEnd) && "Styles",
-              ].filter(Boolean).join(" · ") || "No display set"}
-            />
-
-            {isDisplayOpen && <>
-
             {/* Color (events) — default / inherited from parent span / custom override */}
             {formData.type === "event" && (() => {
               const inheritedColor = eventParentSpan?.color;
@@ -1801,24 +1948,10 @@ export default function RightPanel({
                   <div className="edit-row">
                     <label>{t("fields.colorLower", "color")}</label>
                     <div className="edit-separator" />
-                    <div className="event-color-wrap">
-                      {isCustom ? (
-                        <button
-                          type="button"
-                          className="event-color-revert"
-                          title={t("rightPanel.revertInherited", "Revert to inherited")}
-                          onClick={() => {
-                            const next = { ...formData };
-                            delete next.color;
-                            setFormData(next);
-                            commitDraft(next);
-                          }}
-                        ><RotateCcw size={11} /></button>
-                      ) : (
-                        <Link size={11} className="event-color-chain" />
-                      )}
+                    <div className="color-field-wrap">
                       <ColorPicker
-                        className="edit-color-picker"
+                        className="edit-select color-field"
+                        style={{ background: undefined }}
                         value={swatchColor}
                         ariaLabel="Pick event color"
                         onChange={(hex) => {
@@ -1827,20 +1960,33 @@ export default function RightPanel({
                           setFormData(next);
                           commitDraft(next);
                         }}
-                      />
-                      {isCustom ? (
+                      >
+                        <span className="color-field-swatch" style={{ background: swatchColor }} />
                         <span className="event-color-text">
-                          <span className="event-color-status">{t("colorStatus.custom", "Custom")}</span>
-                          <span className="event-color-hex">{formData.color}</span>
+                          <span className="event-color-status">
+                            {isCustom
+                              ? t("colorStatus.custom", "Custom")
+                              : inheritedColor
+                                ? t("colorStatus.inherited", "Inherited")
+                                : t("colorStatus.default", "Default")}
+                          </span>
+                          {isCustom && <span className="event-color-hex">{formData.color}</span>}
                         </span>
-                      ) : inheritedColor ? (
-                        <span className="event-color-text">
-                          <span className="event-color-status">{t("colorStatus.inherited", "Inherited")}</span>
-                        </span>
-                      ) : (
-                        <span className="event-color-text">
-                          <span className="event-color-status">{t("colorStatus.default", "Default")}</span>
-                        </span>
+                        {!isCustom && <Link size={11} className="color-field-end event-color-chain" aria-hidden="true" />}
+                      </ColorPicker>
+                      {isCustom && (
+                        <button
+                          type="button"
+                          className="color-field-end event-color-revert"
+                          title={t("rightPanel.revertInherited", "Revert to inherited")}
+                          aria-label={t("rightPanel.revertInherited", "Revert to inherited")}
+                          onClick={() => {
+                            const next = { ...formData };
+                            delete next.color;
+                            setFormData(next);
+                            commitDraft(next);
+                          }}
+                        ><RotateCcw size={11} /></button>
                       )}
                     </div>
                   </div>
@@ -1854,70 +2000,61 @@ export default function RightPanel({
                 <div className="edit-row">
                   <label htmlFor="color">{t("fields.color", "Color")}</label>
                   <div className="edit-separator" />
-                  <div className="edit-color-wrap">
+                  <div className="color-field-wrap">
                     <ColorPicker
                       id="color"
+                      className="edit-select color-field"
+                      style={{ background: undefined }}
                       value={formData.color}
                       onChange={(hex) => {
                         handleChange("color", hex);
                         commitDraft({ ...formData, color: hex });
                       }}
-                      className="edit-color-picker"
                       ariaLabel="Pick color"
-                    />
-                    <input
-                      type="text"
-                      value={formData.color}
-                      onChange={(e) => handleChange("color", e.target.value)}
-                      onBlur={(e) => {
-                        const normalized = normalizeColor(e.target.value);
-                        handleChange("color", normalized);
-                        commitDraft({ ...formData, color: normalized });
-                      }}
-                      className="edit-color-text"
-                      maxLength={7}
-                      placeholder="#000000"
-                    />
+                    >
+                      <span className="color-field-swatch" style={{ background: normalizeColor(formData.color) }} />
+                      <span className="event-color-text">
+                        <span className="event-color-status">{formData.color || "—"}</span>
+                      </span>
+                    </ColorPicker>
                   </div>
                 </div>
               </div>
             )}
 
             {/* Size (spans only) */}
-            {formData.type === "span" && (
+            {formData.type === "span" && isPropVisible("size") && (
               <div className="form-group">
+                {renderRemoveProp("size")}
                 <div className="edit-row">
                   <label htmlFor="spanSize">{t("fields.size", "Size")}</label>
                   <div className="edit-separator" />
-                  <div className="edit-select-wrap">
-                    <select
-                      id="spanSize"
-                      className="edit-select"
-                      value={formData.spanSize || "normal"}
-                      onChange={(e) => {
-                        const val = e.target.value === "normal" ? undefined : e.target.value;
-                        const next = { ...formData };
-                        if (val) {
-                          next.spanSize = val;
-                        } else {
-                          delete next.spanSize;
-                        }
-                        setFormData(next);
-                        commitDraft(next);
-                      }}
-                    >
-                      <option value="thin">{t("sizes.thin", "Thin")}</option>
-                      <option value="normal">{t("sizes.normal", "Normal")}</option>
-                      <option value="thick">{t("sizes.thick", "Thick")}</option>
-                    </select>
-                  </div>
+                  {renderSelectMenu({
+                    field: "spanSize",
+                    id: "spanSize",
+                    value: formData.spanSize || "normal",
+                    options: [
+                      { value: "thin", label: t("sizes.thin", "Thin") },
+                      { value: "normal", label: t("sizes.normal", "Normal") },
+                      { value: "thick", label: t("sizes.thick", "Thick") },
+                    ],
+                    onPick: (picked) => {
+                      const next = { ...formData };
+                      if (picked === "normal") delete next.spanSize;
+                      else next.spanSize = picked;
+                      setFormData(next);
+                      commitDraft(next);
+                    },
+                  })}
                 </div>
               </div>
             )}
 
             {formData.type === "span" && (
               <>
+                {isPropVisible("hideDetails") && (
                 <div className="form-group">
+                  {renderRemoveProp("hideDetails")}
                   <div className="edit-row">
                     <label htmlFor="hideSpanDetails">{t("fields.hideDetails", "Hide Details")}</label>
                     <div className="edit-separator" />
@@ -1938,7 +2075,10 @@ export default function RightPanel({
                     </label>
                   </div>
                 </div>
+                )}
+                {isPropVisible("hideDate") && (
                 <div className="form-group">
+                  {renderRemoveProp("hideDate")}
                   <div className="edit-row">
                     <label htmlFor="hideSpanYears">{t("fields.hideDate", "Hide Date")}</label>
                     <div className="edit-separator" />
@@ -1958,40 +2098,41 @@ export default function RightPanel({
                     </label>
                   </div>
                 </div>
+                )}
               </>
             )}
 
             {formData.type === "era" && (
               <>
+                {isPropVisible("size") && (
                 <div className="form-group">
+                  {renderRemoveProp("size")}
                   <div className="edit-row">
                     <label htmlFor="eraSize">{t("fields.size", "Size")}</label>
                     <div className="edit-separator" />
-                    <div className="edit-select-wrap">
-                      <select
-                        id="eraSize"
-                        className="edit-select"
-                        value={formData.eraSize || "normal"}
-                        onChange={(e) => {
-                          const val = e.target.value === "normal" ? undefined : e.target.value;
-                          const next = { ...formData };
-                          if (val) {
-                            next.eraSize = val;
-                          } else {
-                            delete next.eraSize;
-                          }
-                          setFormData(next);
-                          commitDraft(next);
-                        }}
-                      >
-                        <option value="normal">{t("sizes.normal", "Normal")}</option>
-                        <option value="thick">{t("sizes.thick", "Thick")}</option>
-                        <option value="extra-thick">{t("sizes.extraThick", "Extra Thick")}</option>
-                      </select>
-                    </div>
+                    {renderSelectMenu({
+                      field: "eraSize",
+                      id: "eraSize",
+                      value: formData.eraSize || "normal",
+                      options: [
+                        { value: "normal", label: t("sizes.normal", "Normal") },
+                        { value: "thick", label: t("sizes.thick", "Thick") },
+                        { value: "extra-thick", label: t("sizes.extraThick", "Extra Thick") },
+                      ],
+                      onPick: (picked) => {
+                        const next = { ...formData };
+                        if (picked === "normal") delete next.eraSize;
+                        else next.eraSize = picked;
+                        setFormData(next);
+                        commitDraft(next);
+                      },
+                    })}
                   </div>
                 </div>
+                )}
+                {isPropVisible("hideDetails") && (
                 <div className="form-group">
+                  {renderRemoveProp("hideDetails")}
                   <div className="edit-row">
                     <label htmlFor="hideEraDetails">{t("fields.hideDetails", "Hide Details")}</label>
                     <div className="edit-separator" />
@@ -2011,7 +2152,10 @@ export default function RightPanel({
                     </label>
                   </div>
                 </div>
+                )}
+                {isPropVisible("fuzzyStart") && (
                 <div className="form-group">
+                  {renderRemoveProp("fuzzyStart")}
                   <div className="edit-row">
                     <label htmlFor="fuzzyStart">{t("fields.fuzzyStart", "Fuzzy Start")}</label>
                     <div className="edit-separator" />
@@ -2031,7 +2175,10 @@ export default function RightPanel({
                     </label>
                   </div>
                 </div>
+                )}
+                {isPropVisible("fuzzyEnd") && (
                 <div className="form-group">
+                  {renderRemoveProp("fuzzyEnd")}
                   <div className="edit-row">
                     <label htmlFor="fuzzyEnd">{t("fields.fuzzyEnd", "Fuzzy End")}</label>
                     <div className="edit-separator" />
@@ -2051,26 +2198,30 @@ export default function RightPanel({
                     </label>
                   </div>
                 </div>
+                )}
               </>
             )}
 
-            {formData.type === "event" && (
+            {formData.type === "event" && isPropVisible("thumbnail") && (
               <>
-              <div className="thumbnail-full-header">
-                <span className="thumbnail-full-label">thumbnail</span>
-                {formData.thumbnail && <span className="thumbnail-full-meta">
-                  {(() => {
-                    try {
-                      const decoded = decodeURIComponent(formData.thumbnail);
-                      const parts = decoded.split(/[/\\]/);
-                      return parts[parts.length - 1] || 'image';
-                    } catch {
-                      return formData.thumbnail.split('/').pop()?.split('?')[0] ?? 'image';
-                    }
-                  })()}
-                  {thumbnailMeta && ` · ${thumbnailMeta.width}×${thumbnailMeta.height}`}
-                </span>}
-              </div>
+              {formData.thumbnail && (
+                <div className="thumbnail-full-header">
+                  {renderRemoveProp("thumbnail")}
+                  <span className="thumbnail-full-label">thumbnail</span>
+                  {formData.thumbnail && <span className="thumbnail-full-meta">
+                    {(() => {
+                      try {
+                        const decoded = decodeURIComponent(formData.thumbnail);
+                        const parts = decoded.split(/[/\\]/);
+                        return parts[parts.length - 1] || 'image';
+                      } catch {
+                        return formData.thumbnail.split('/').pop()?.split('?')[0] ?? 'image';
+                      }
+                    })()}
+                    {thumbnailMeta && ` · ${thumbnailMeta.width}×${thumbnailMeta.height}`}
+                  </span>}
+                </div>
+              )}
               {formData.thumbnail && <div className="thumbnail-full-card">
                 <img
                   key={formData.thumbnail}
@@ -2151,48 +2302,40 @@ export default function RightPanel({
                 </div>
               </div>}
               {!formData.thumbnail && (
-                <div className="thumbnail-dropzone-wrap">
-                  <button
-                    type="button"
-                    className={`thumbnail-dropzone${isDragOver ? " is-drag-over" : ""}`}
-                    onClick={async () => {
-                      setIsThumbnailUrlMode(false);
-                      setThumbnailUrlInput("");
-                      const url = await handlePickThumbnail();
-                      if (!url) return;
-                      const next = { ...formData, thumbnail: url };
-                      setFormData(next);
-                      commitDraft(next);
-                    }}
-                    onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                    onDragLeave={() => setIsDragOver(false)}
-                    onDrop={async (e) => {
-                      e.preventDefault();
-                      setIsDragOver(false);
-                      const file = e.dataTransfer.files[0];
-                      if (!file) return;
-                      const ext = file.name.split('.').pop().toLowerCase();
-                      if (!['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'].includes(ext)) return;
-                      const filePath = window.electron?.getPathForFile?.(file) ?? file.path;
-                      const url = await handleDropThumbnail(filePath);
-                      if (!url) return;
-                      const next = { ...formData, thumbnail: url };
-                      setFormData(next);
-                      commitDraft(next);
-                    }}
-                  >
-                    <ImagePlus size={28} strokeWidth={1.5} className="thumbnail-dropzone-icon" />
-                    <span className="thumbnail-dropzone-title">{t("rightPanel.dropImage", "Drop image or click to upload")}</span>
-                    <span className="thumbnail-dropzone-subtitle">PNG · JPG · SVG · up to 10 MB</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`thumbnail-url-icon-btn${isThumbnailUrlMode ? " is-active" : ""}`}
-                    title={t("rightPanel.pasteImageUrl", "Paste image URL")}
-                    onClick={() => { setIsThumbnailUrlMode(v => !v); setThumbnailUrlInput(""); }}
-                  >
-                    <Link size={12} />
-                  </button>
+                <div className="form-group">
+                  {renderRemoveProp("thumbnail")}
+                  <div className="edit-row">
+                    <label>{t("fields.thumbnail", "Thumbnail")}</label>
+                    <div className="edit-separator" />
+                    <div className="color-field-wrap">
+                      <button
+                        type="button"
+                        className="edit-select thumbnail-field"
+                        title={t("rightPanel.dropImage", "Drop image or click to upload")}
+                        onClick={async () => {
+                          setIsThumbnailUrlMode(false);
+                          setThumbnailUrlInput("");
+                          const url = await handlePickThumbnail();
+                          if (!url) return;
+                          const next = { ...formData, thumbnail: url };
+                          setFormData(next);
+                          commitDraft(next);
+                        }}
+                      >
+                        <span className="edit-select-slot" aria-hidden="true"><ImagePlus size={14} /></span>
+                        {t("rightPanel.uploadImage", "Upload image")}
+                      </button>
+                      <button
+                        type="button"
+                        className={`color-field-end thumbnail-url-toggle${isThumbnailUrlMode ? " is-active" : ""}`}
+                        title={t("rightPanel.pasteImageUrl", "Paste image URL")}
+                        aria-label={t("rightPanel.pasteImageUrl", "Paste image URL")}
+                        onClick={() => { setIsThumbnailUrlMode(v => !v); setThumbnailUrlInput(""); }}
+                      >
+                        <Link size={12} />
+                      </button>
+                    </div>
+                  </div>
                   {isThumbnailUrlMode && (
                     <div className="thumbnail-url-row">
                       <input
@@ -2236,7 +2379,9 @@ export default function RightPanel({
             )}
 
             {/* Icon */}
+            {isPropVisible("icon") && (
             <div className="form-group">
+              {renderRemoveProp("icon")}
               <div className="edit-row">
                 <label>{t("fields.icon", "Icon")}</label>
                 <div className="edit-separator" />
@@ -2253,25 +2398,34 @@ export default function RightPanel({
                 />
               </div>
             </div>
+            )}
 
             {/* Event styling (events only) */}
             {formData.type === "event" && (
               <>
+                {isPropVisible("lineStyle") && (
                 <div className="form-group">
+                  {renderRemoveProp("lineStyle")}
                   <div className="edit-row">
                     <label>{t("fields.lineStyle", "Line Style")}</label>
                     <div className="edit-separator" />
                     {renderEventStrokeStyleControl("eventLineStyle", formData.eventLineStyle, "Event line style", "line")}
                   </div>
                 </div>
+                )}
+                {isPropVisible("borderStyle") && (
                 <div className="form-group">
+                  {renderRemoveProp("borderStyle")}
                   <div className="edit-row">
                     <label>{t("fields.borderStyle", "Border Style")}</label>
                     <div className="edit-separator" />
                     {renderEventStrokeStyleControl("eventBorderStyle", formData.eventBorderStyle, "Event border style", "border")}
                   </div>
                 </div>
+                )}
+                {isPropVisible("hideDate") && (
                 <div className="form-group">
+                  {renderRemoveProp("hideDate")}
                   <div className="edit-row">
                     <label htmlFor="hideEventYears">{t("fields.hideDate", "Hide Date")}</label>
                     <div className="edit-separator" />
@@ -2291,6 +2445,7 @@ export default function RightPanel({
                     </label>
                   </div>
                 </div>
+                )}
               </>
             )}
 
@@ -2400,7 +2555,7 @@ export default function RightPanel({
                               <label>{t("fields.sizeLower", "size")}</label>
                               <select
                                 className="edit-select"
-                                style={{ fontSize: "var(--text-xs)", padding: "3px 20px 3px 6px", minWidth: 0 }}
+                                style={{ fontSize: "var(--text-xs)", padding: "3px 20px 3px 6px", minWidth: 0, height: "auto" }}
                                 value={brk.size || ""}
                                 onChange={(e) => {
                                   const nextBreaks = [...formData.breaks];
@@ -2455,50 +2610,97 @@ export default function RightPanel({
                 </div>
             )}
 
-            </>}
+            {hiddenProps.length > 0 && (
+              <div className="add-property-wrap">
+                <button type="button" className="add-property-btn" onClick={() => setIsAddPropOpen((v) => !v)}>
+                  + {t("rightPanel.addProperty", "Add property")}
+                </button>
+                {isAddPropOpen && (
+                  <>
+                    <div className="note-add-dropdown-backdrop" onClick={() => setIsAddPropOpen(false)} />
+                    <div className="add-property-menu">
+                      {PROPERTY_GROUPS.map((group) => {
+                        const items = hiddenProps.filter((p) => p.group === group);
+                        if (items.length === 0) return null;
+                        return (
+                          <div key={group} className="add-property-group">
+                            <div className="add-property-group-label">{propertyGroupLabels[group]}</div>
+                            {items.map((p) => (
+                              <button
+                                key={p.key}
+                                type="button"
+                                className="span-relation-dropdown-item add-property-item"
+                                onClick={() => {
+                                  setAddedProps((prev) => [...prev, p.key]);
+                                  setIsAddPropOpen(false);
+                                }}
+                              >
+                                <p.icon size={14} className="add-property-item-icon" aria-hidden="true" />
+                                {p.label}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
-            <SectionHeader
-              title={t("rightPanel.sections.notes", "Notes & Sources")}
-              isOpen={isNotesOpen}
-              onToggle={() => setIsNotesOpen(v => !v)}
-              summary={(() => {
-                const sourceCount = Array.isArray(formData.sources) ? formData.sources.length : 0;
-                const parts = [
-                  formData.noteFile && "Note",
-                  formData.wikiUrl && "Wiki",
-                  sourceCount > 0 && `${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`,
-                ].filter(Boolean);
-                return parts.length > 0 ? parts.join(" · ") : "No note";
-              })()}
-            />
+            <div className="edit-section-divider" />
 
-            {isNotesOpen && <div className="form-group note-form-group">
-              {!formData.noteFile ? (
-                <div className="note-add-actions">
-                  <div className="note-add-dropdown-wrap">
-                    <button type="button" className="note-create-card" onClick={() => setIsNoteAddOpen(v => !v)}>
-                      <div className="note-create-card-icon"><FileText size={18} /></div>
-                      <div className="note-create-card-text">
-                        <span className="note-create-card-title">{t("noteEditor.addTitle", "Add note")}</span>
-                        <span className="note-create-card-subtitle">{t("noteEditor.addSubtitle", "Attach a note to this event")}</span>
-                      </div>
+            <div className="form-group note-form-group">
+              {(!formData.noteFile || showWikiAttach || showSourceAttach) && (
+                <div className="attach-row">
+                  {!formData.noteFile && (
+                    <div className="note-add-dropdown-wrap">
+                      <button
+                        type="button"
+                        className="attach-btn"
+                        title={t("rightPanel.attach.noteHint", "Write a markdown note, or link an existing one")}
+                        onClick={() => setIsNoteAddOpen(v => !v)}
+                      >
+                        <FileText size={14} aria-hidden="true" />{t("rightPanel.attach.note", "Note")}
+                      </button>
+                      {isNoteAddOpen && (
+                        <>
+                          <div className="note-add-dropdown-backdrop" onClick={() => setIsNoteAddOpen(false)} />
+                          <div className="note-add-dropdown">
+                            <button type="button" className="note-add-dropdown-item" onClick={() => { setIsNoteAddOpen(false); handleAddNote(); }}>
+                              Create Note
+                            </button>
+                            <button type="button" className="note-add-dropdown-item" onClick={() => { setIsNoteAddOpen(false); handleAddExistingNote(); }}>
+                              Add Existing Note
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {showWikiAttach && (
+                    <button
+                      type="button"
+                      className="attach-btn"
+                      title={t("wiki.add.subtitle", "Link a MediaWiki article or section")}
+                      onClick={() => setIsWikiAdding(true)}
+                    >
+                      <BookOpen size={14} aria-hidden="true" />{t("rightPanel.attach.wiki", "Wiki")}
                     </button>
-                    {isNoteAddOpen && (
-                      <>
-                        <div className="note-add-dropdown-backdrop" onClick={() => setIsNoteAddOpen(false)} />
-                        <div className="note-add-dropdown">
-                          <button type="button" className="note-add-dropdown-item" onClick={() => { setIsNoteAddOpen(false); handleAddNote(); }}>
-                            Create Note
-                          </button>
-                          <button type="button" className="note-add-dropdown-item" onClick={() => { setIsNoteAddOpen(false); handleAddExistingNote(); }}>
-                            Add Existing Note
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
+                  )}
+                  {showSourceAttach && (
+                    <button
+                      type="button"
+                      className="attach-btn"
+                      title={t("rightPanel.attach.sourceHint", "Cite a book, article or link")}
+                      onClick={() => setIsSourceAdding(true)}
+                    >
+                      <Link size={14} aria-hidden="true" />{t("rightPanel.attach.sources", "Sources")}
+                    </button>
+                  )}
                 </div>
-              ) : (
+              )}
+              {formData.noteFile && (
                 <div className="note-editor-card">
                   <div className="rp-note-header">
                     <span className="rp-note-label rp-note-label-note">{t("noteEditor.label", "Note")}</span>
@@ -2519,21 +2721,30 @@ export default function RightPanel({
                   />
                 </div>
               )}
-              <WikiSection
-                key={`wiki-${selectedElement?.id}`}
-                wikiUrl={formData.wikiUrl}
-                useWiki={timelineData?.file?.useWiki}
-                isEditMode={true}
-                onUrlChange={handleWikiUrlChange}
-              />
-              <SourcesSection
-                key={`sources-${selectedElement?.id}`}
-                sources={formData.sources}
-                sourceLink={formData.sourceLink}
-                isEditMode={true}
-                onSourcesChange={handleSourcesChange}
-              />
-            </div>}
+              {useWiki && (formData.wikiUrl || isWikiAdding) && (
+                <WikiSection
+                  key={`wiki-${selectedElement?.id}`}
+                  wikiUrl={formData.wikiUrl}
+                  useWiki={useWiki}
+                  isEditMode={true}
+                  onUrlChange={handleWikiUrlChange}
+                  compactAdd
+                  startOpen={!formData.wikiUrl}
+                  onCancelAdd={() => setIsWikiAdding(false)}
+                />
+              )}
+              {(hasSources || isSourceAdding) && (
+                <SourcesSection
+                  key={`sources-${selectedElement?.id}`}
+                  sources={formData.sources}
+                  sourceLink={formData.sourceLink}
+                  isEditMode={true}
+                  onSourcesChange={handleSourcesChange}
+                  startFormOpen={!hasSources}
+                  onCancelAdd={() => setIsSourceAdding(false)}
+                />
+              )}
+            </div>
 
           </form>
         )}

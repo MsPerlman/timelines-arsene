@@ -342,6 +342,21 @@ function App() {
   const timelineViewRef = useRef(null);
   const currentLeftWidth = isLeftCollapsed ? COLLAPSED_WIDTH : sidebarWidth;
 
+  // A file dropped outside a drop target would make Electron navigate to it, which main.cjs
+  // turns into opening it in another app; swallow those drops while a timeline is open
+  const hasTimeline = !!timelineData;
+  useEffect(() => {
+    if (!hasTimeline) return undefined;
+    const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+    const swallow = (e) => { if (isFileDrag(e)) e.preventDefault(); };
+    window.addEventListener("dragover", swallow);
+    window.addEventListener("drop", swallow);
+    return () => {
+      window.removeEventListener("dragover", swallow);
+      window.removeEventListener("drop", swallow);
+    };
+  }, [hasTimeline]);
+
   useEffect(() => {
     function handleMouseMove(e) {
       if (isDraggingLeft.current) {
@@ -405,6 +420,7 @@ function App() {
         rightReversedAfterMaxRef.current = false;
         rightLastDistanceRef.current = null;
         document.body.classList.remove("dragging");
+        document.querySelectorAll(".overlay-resizer.is-dragging").forEach((el) => el.classList.remove("is-dragging"));
       }
     }
 
@@ -2527,6 +2543,7 @@ function App() {
             onMouseDown={(e) => {
               e.preventDefault();
               isDraggingLeft.current = true;
+              e.currentTarget.classList.add("is-dragging");
               document.body.classList.add("dragging");
             }}
           />
@@ -2771,6 +2788,7 @@ function App() {
                 rightMaxReachedRef.current = false;
                 rightReversedAfterMaxRef.current = false;
                 rightLastDistanceRef.current = null;
+                e.currentTarget.classList.add("is-dragging");
                 document.body.classList.add("dragging");
               }}
             />
@@ -2786,6 +2804,7 @@ function App() {
                 rightMaxReachedRef.current = false;
                 rightReversedAfterMaxRef.current = false;
                 rightLastDistanceRef.current = null;
+                e.currentTarget.classList.add("is-dragging");
                 document.body.classList.add("dragging");
               }}
             />

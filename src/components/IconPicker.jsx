@@ -1,7 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
 import { ICON_CATEGORIES, ALL_ICONS } from "../config/elementIcons";
+
+// "UserCheck" -> "User check"
+const displayName = (name) => {
+  const spaced = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+};
 
 export default function IconPicker({ value, onChange }) {
   const { t } = useTranslation("timeline");
@@ -55,26 +60,19 @@ export default function IconPicker({ value, onChange }) {
 
   return (
     <div className="icon-picker-wrap">
-      <>
+      <div className="edit-select-wrap icon-picker-field">
         <button
           type="button"
-          className={`icon-picker-trigger${value ? " has-icon" : ""}`}
+          className={`edit-select icon-picker-trigger${value ? " has-icon" : ""}`}
           onClick={() => setOpen((v) => !v)}
           title={value ? t("iconPicker.current", "Icon: {{name}}", { name: value }) : t("iconPicker.add", "Add icon")}
         >
-          {CurrentIcon ? <CurrentIcon size={14} /> : <span className="icon-picker-placeholder">{t("iconPicker.none", "No icon")}</span>}
+          <span className="icon-picker-slot" aria-hidden="true">{CurrentIcon && <CurrentIcon size={14} />}</span>
+          {value
+            ? <span className="icon-picker-name">{displayName(value)}</span>
+            : <span className="icon-picker-placeholder">{t("iconPicker.none", "No icon")}</span>}
         </button>
-        {value && (
-          <button
-            type="button"
-            className="icon-picker-clear"
-            onClick={() => onChange(null)}
-            title={t("iconPicker.remove", "Remove icon")}
-          >
-            <X size={10} />
-          </button>
-        )}
-      </>
+      </div>
       {open && (
         <div className="icon-picker-popover" ref={popoverRef}>
           <div className="icon-picker-search-wrap">

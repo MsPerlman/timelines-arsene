@@ -145,14 +145,15 @@ function sanitizeWikiHtml(html, host = "https://en.wikipedia.org") {
   return doc.body.innerHTML;
 }
 
-export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange }) {
+// compactAdd: the parent renders its own "add" trigger, so skip the add card and start with the URL input open
+export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange, compactAdd = false, startOpen = false, onCancelAdd }) {
   const { t } = useTranslation("timeline");
   const [wikiContent, setWikiContent] = useState("");
   const [isWikiLoading, setIsWikiLoading] = useState(false);
   const [wikiError, setWikiError] = useState("");
   const [isWikiCollapsed, setIsWikiCollapsed] = useState(false);
   const [wikiUrlInput, setWikiUrlInput] = useState("");
-  const [isWikiUrlInputOpen, setIsWikiUrlInputOpen] = useState(false);
+  const [isWikiUrlInputOpen, setIsWikiUrlInputOpen] = useState(startOpen);
   const [wikiUrlInputError, setWikiUrlInputError] = useState("");
   const wikiRenderRef = useRef(null);
   const wikiUrlInputRef = useRef(null);
@@ -343,11 +344,16 @@ export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange 
     setTimeout(() => wikiUrlInputRef.current?.focus(), 0);
   };
 
+  const closeWikiInput = () => {
+    setIsWikiUrlInputOpen(false);
+    setWikiUrlInputError("");
+    if (!wikiUrl) onCancelAdd?.();
+  };
+
   const handleWikiUrlSubmit = () => {
     const trimmed = wikiUrlInput.trim();
     if (!trimmed) {
-      setIsWikiUrlInputOpen(false);
-      setWikiUrlInputError("");
+      closeWikiInput();
       return;
     }
     if (!parseMediaWikiUrl(trimmed)) {
@@ -364,8 +370,7 @@ export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange 
       e.preventDefault();
       handleWikiUrlSubmit();
     } else if (e.key === "Escape") {
-      setIsWikiUrlInputOpen(false);
-      setWikiUrlInputError("");
+      closeWikiInput();
     }
   };
 
@@ -429,18 +434,31 @@ export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange 
 
   // Edit mode
   const parsedWiki = wikiUrl ? parseMediaWikiUrl(wikiUrl) : null;
+  let articleHost = "";
+  if (parsedWiki) {
+    try { articleHost = new URL(parsedWiki.host).hostname; } catch { /* invalid host */ }
+  }
 
+  if (!wikiUrl && !isWikiUrlInputOpen) {
+    if (compactAdd) return null;
+    return (
+      <button type="button" className="note-create-card" onClick={handleOpenWikiInput}>
+        <div className="note-create-card-icon"><BookOpen size={18} /></div>
+        <div className="note-create-card-text">
+          <span className="note-create-card-title">{t("wiki.add.title", "Add wiki")}</span>
+          <span className="note-create-card-subtitle">{t("wiki.add.subtitle", "Link a MediaWiki article or section")}</span>
+        </div>
+      </button>
+    );
+  }
+
+  // Boxed with a header to match the note and sources sections
   return (
-    <>
-      {!wikiUrl && !isWikiUrlInputOpen && (
-        <button type="button" className="note-create-card" onClick={handleOpenWikiInput}>
-          <div className="note-create-card-icon"><BookOpen size={18} /></div>
-          <div className="note-create-card-text">
-            <span className="note-create-card-title">{t("wiki.add.title", "Add wiki")}</span>
-            <span className="note-create-card-subtitle">{t("wiki.add.subtitle", "Link a MediaWiki article or section")}</span>
-          </div>
-        </button>
-      )}
+    <div className="sources-edit-section wiki-edit-section">
+      <div className="rp-note-header">
+        <span className="rp-sources-label"><BookOpen size={12} strokeWidth={2} />{t("wiki.heading", "Wiki")}</span>
+        {articleHost && <span className="rp-note-meta">{articleHost}</span>}
+      </div>
       {isWikiUrlInputOpen && (
         <div className="wiki-url-input-card">
           <div className="source-field">
@@ -448,6 +466,7 @@ export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange 
             <input
               ref={wikiUrlInputRef}
               type="text"
+              autoFocus
               className={`source-field-input${wikiUrlInputError ? " settings-input-error" : ""}`}
               value={wikiUrlInput}
               onChange={(e) => { setWikiUrlInput(e.target.value); setWikiUrlInputError(""); }}
@@ -457,7 +476,7 @@ export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange 
             {wikiUrlInputError && <div className="wiki-url-error">{wikiUrlInputError}</div>}
           </div>
           <div className="source-add-actions">
-            <button type="button" className="btn-secondary" onClick={() => { setIsWikiUrlInputOpen(false); setWikiUrlInputError(""); }}>{t("common:actions.cancel", "Cancel")}</button>
+            <button type="button" className="btn-secondary" onClick={closeWikiInput}>{t("common:actions.cancel", "Cancel")}</button>
             <button type="button" className="btn-primary" onClick={handleWikiUrlSubmit}>{t("common:actions.save", "Save")}</button>
           </div>
         </div>
@@ -465,14 +484,11 @@ export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange 
       {wikiUrl && parsedWiki && !isWikiUrlInputOpen && (() => {
         const articleTitle = parsedWiki.title.replace(/_/g, " ");
         const sectionName = parsedWiki.section?.replace(/_/g, " ");
-        let articleHost = "";
-        try { articleHost = new URL(parsedWiki.host).hostname; } catch { /* invalid host */ }
         return (
           <div className="wiki-url-card">
             <div className="wiki-url-card-avatar">{articleTitle.charAt(0).toUpperCase()}</div>
             <div className="wiki-url-card-info">
               <div className="wiki-url-card-title">{articleTitle}{sectionName ? ` § ${sectionName}` : ""}</div>
-              <div className="wiki-url-card-host">{articleHost}</div>
             </div>
             <div className="wiki-url-card-actions">
               <button type="button" className="wiki-url-card-btn" onClick={handleOpenWikiInput} title={t("common:actions.change", "Change")}><Pencil size={13} /></button>
@@ -481,6 +497,6 @@ export default function WikiSection({ wikiUrl, useWiki, isEditMode, onUrlChange 
           </div>
         );
       })()}
-    </>
+    </div>
   );
 }
