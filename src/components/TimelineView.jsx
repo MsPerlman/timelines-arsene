@@ -648,6 +648,8 @@ const TimelineView = forwardRef(function TimelineView({
     yearToPx,
     calculatedHeight,
     BASE_LINE_Y,
+    exportTop,
+    exportBottom,
     normalizedScaleSections,
     compressedMin,
     compressedMax,
@@ -895,6 +897,8 @@ const TimelineView = forwardRef(function TimelineView({
         yearToPx,
         calculatedHeight: 1000,
         BASE_LINE_Y: 500,
+        exportTop: 0,
+        exportBottom: 1100,
         normalizedScaleSections,
         compressedMin,
         compressedMax,
@@ -1157,6 +1161,10 @@ const TimelineView = forwardRef(function TimelineView({
 
     const calculatedHeight = aboveBaseline + belowBaseline;
     const BASE_LINE_Y = calculatedHeight;
+    // The axis sits at calculatedHeight with eras and below-line groups under it; exports use this extent
+    const EXPORT_PAD = 40;
+    const exportTop = Math.max(0, BASE_LINE_Y - aboveBaseline - EXPORT_PAD);
+    const exportBottom = BASE_LINE_Y + belowBaseline + EXPORT_PAD;
 
     const groupLayoutsRaw = tempGroupLayouts.map((group) => {
       const { finalSpans: rawFinalSpans } = layoutSpans({
@@ -1368,6 +1376,8 @@ const TimelineView = forwardRef(function TimelineView({
       yearToPx,
       calculatedHeight,
       BASE_LINE_Y,
+      exportTop,
+      exportBottom,
       normalizedScaleSections,
       compressedMin,
       compressedMax,
@@ -2848,15 +2858,15 @@ const TimelineView = forwardRef(function TimelineView({
   // One html2canvas render shared by PNG export, export previews and video. Export-only changes
   // (no zoom/pan transform, background override) are made on html2canvas's clone, never the live
   // view, so the timeline doesn't jump while exporting.
-  // region: optional { x, width, y?, height? } in timeline px to render only that slice. Canvas size
-  // limits then apply to the slice, not the whole timeline, so small ranges stay sharp at large sizes.
+  // region: optional { x, width, y?, height? } in timeline px (y from exportTop) to render only that
+  // slice. Canvas size limits then apply to the slice, so small ranges stay sharp at large sizes.
   const renderTimelineCanvas = async ({ scale, transparentBg = false, customBg = null, region = null }) => {
     const timelineEl = timelineRef.current;
     if (!timelineEl) throw new Error('Timeline is not ready');
     const html2canvas = (await import('html2canvas')).default;
 
     const fullWidth = timelineEl.scrollWidth;
-    const fullHeight = calculatedHeight + 100;
+    const fullHeight = exportBottom - exportTop;
     const regionX = region ? Math.max(0, Math.min(fullWidth - 1, Math.floor(region.x))) : 0;
     const width = region ? Math.max(1, Math.min(fullWidth - regionX, Math.ceil(region.width))) : fullWidth;
     const regionY = region?.height ? Math.max(0, Math.min(fullHeight - 1, Math.floor(region.y ?? 0))) : 0;
@@ -2882,11 +2892,11 @@ const TimelineView = forwardRef(function TimelineView({
       useCORS: true,
       logging: false,
       x: rect.left + window.scrollX + regionX,
-      y: rect.top + window.scrollY + regionY,
+      y: rect.top + window.scrollY + exportTop + regionY,
       width,
       height,
       windowWidth: fullWidth,
-      windowHeight: fullHeight,
+      windowHeight: exportBottom,
       onclone: (clonedDocument, clonedTimeline) => {
         clonedTimeline.style.transform = 'none';
         clonedTimeline.style.transformOrigin = '';
@@ -2935,8 +2945,6 @@ const TimelineView = forwardRef(function TimelineView({
       }
     }
 
-    // The grid's year labels run along the top and bottom edges; they aren't content
-    const edge = Math.round(48 * scale);
     const minCount = Math.max(2, Math.round(w * 0.002));
     const isContentRow = (y) => {
       let count = 0;
@@ -2952,13 +2960,13 @@ const TimelineView = forwardRef(function TimelineView({
       }
       return false;
     };
-    let top = edge;
-    while (top < h - edge && !isContentRow(top)) top++;
-    let bottom = h - edge - 1;
+    let top = 0;
+    while (top < h && !isContentRow(top)) top++;
+    let bottom = h - 1;
     while (bottom > top && !isContentRow(bottom)) bottom--;
 
     const pad = 24;
-    const bounds = top >= h - edge
+    const bounds = top >= h
       ? null
       : { top: Math.max(0, top / scale - pad), bottom: Math.min(fullHeight, (bottom + 1) / scale + pad) };
     scan.cache.set(cacheKey, bounds);
@@ -3384,7 +3392,7 @@ const TimelineView = forwardRef(function TimelineView({
         timelineEl,
         scaleRef.current,
         timelineEl.scrollWidth,
-        calculatedHeight + 100,
+        exportBottom,
         options?.background,
       );
     },
@@ -3406,7 +3414,7 @@ const TimelineView = forwardRef(function TimelineView({
 
       try {
         const elWidth = timelineEl.scrollWidth;
-        const elHeight = calculatedHeight + 100;
+        const elHeight = exportBottom - exportTop;
         const maxPreviewWidth = Number(options?.maxWidth);
         const maxPreviewHeight = Number(options?.maxHeight);
         const { canvas } = await renderTimelineCanvasRef.current({
@@ -3467,7 +3475,7 @@ const TimelineView = forwardRef(function TimelineView({
       translateRef.current.y = container.clientHeight / 2 - centerY * scale;
       applyTransform();
     },
-  }), [calculatedHeight, yearToPx, timelineWidth, file, TIMELINE_PADDING, PX_PER_YEAR, compressedMin, compressedMax, decompressYear, groupBandBoxes]);
+  }), [exportTop, exportBottom, yearToPx, timelineWidth, file, TIMELINE_PADDING, PX_PER_YEAR, compressedMin, compressedMax, decompressYear, groupBandBoxes]);
 
   // Reapply transform when timeline DOM is recreated after switching back from map view
   useLayoutEffect(() => {
