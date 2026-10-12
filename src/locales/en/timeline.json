@@ -61,6 +61,13 @@
     "event": "Event",
     "span": "Span"
   },
+  "exportProgress": {
+    "compositing": "Compositing image...",
+    "encoding": "Encoding PNG...",
+    "preparing": "Preparing export...",
+    "rendering": "Rendering timeline...",
+    "saved": "Saved"
+  },
   "fields": {
     "addTag": "add tag...",
     "approximate": "Approximate",

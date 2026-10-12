@@ -324,7 +324,9 @@ async function initializeUserData() {
 // Register custom protocol for serving local fonts
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-font', privileges: { bypassCSP: true, supportFetchAPI: true, standard: true } },
-  { scheme: 'timelines-asset', privileges: { bypassCSP: true, supportFetchAPI: true, standard: true, secure: true } },
+  // corsEnabled + the Access-Control-Allow-Origin header below let PNG/video export draw thumbnails
+  // onto a canvas; the app's own origin counts as a different site from this scheme
+  { scheme: 'timelines-asset', privileges: { bypassCSP: true, supportFetchAPI: true, standard: true, secure: true, corsEnabled: true } },
 ]);
 
 // Auto-updater setup
@@ -464,6 +466,7 @@ app.whenReady().then(async () => {
             'Accept-Ranges': 'bytes',
             'Content-Length': String(chunkSize),
             'Cache-Control': 'public, max-age=3600',
+            'Access-Control-Allow-Origin': '*',
           },
         });
       }
@@ -471,6 +474,7 @@ app.whenReady().then(async () => {
       const fileResponse = await net.fetch(pathToFileURL(normalizedAssetPath).toString());
       const headers = new Headers(fileResponse.headers);
       headers.set('Cache-Control', 'public, max-age=3600');
+      headers.set('Access-Control-Allow-Origin', '*');
       return new Response(fileResponse.body, { status: fileResponse.status, headers });
     } catch (error) {
       console.error('Error serving asset:', error);
@@ -675,6 +679,25 @@ ipcMain.handle('load-timeline', async (event, filename) => {
   } catch (error) {
     console.error('Error loading timeline:', error);
     throw error;
+  }
+});
+
+// PNG/video exports: the renderer hands over the encoded bytes, we ask where to put them
+ipcMain.handle('save-export-file', async (event, { bytes, suggestedName, filterName, extension }) => {
+  try {
+    const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: suggestedName,
+      filters: [
+        { name: filterName || extension.toUpperCase(), extensions: [extension] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+    if (canceled || !filePath) return { success: false, canceled: true };
+    await fs.writeFile(filePath, Buffer.from(bytes));
+    return { success: true, path: filePath };
+  } catch (error) {
+    console.error('Error saving export:', error);
+    return { success: false, error: error.message };
   }
 });
 

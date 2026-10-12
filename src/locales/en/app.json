@@ -82,6 +82,10 @@
       "letter": "Letter 300 DPI (3300 × 2550)",
       "poster": "Poster 36×24\" (10800 × 7200)"
     },
+    "scale": {
+      "description": "Spacing between years for this export ({{level}}x). Your timeline isn't changed.",
+      "label": "Timeline Scale"
+    },
     "title": "EXPORT PNG",
     "titlePosition": {
       "bottomCenter": "Bottom Center",
@@ -131,6 +135,9 @@
       "15": "15 seconds",
       "30": "30 seconds",
       "custom": "Custom"
+    },
+    "errors": {
+      "unsupported": "{{width}} × {{height}} at {{fps}} fps isn't supported by this device's video encoder. Try a smaller size or a lower frame rate."
     },
     "export": "Export",
     "exporting": "Exporting...",
@@ -388,6 +395,7 @@
     "colorApplied_one": "Color applied to {{count}} element",
     "colorApplied_other": "Color applied to {{count}} elements",
     "exportingPackage": "Exporting package...",
+    "jsonSaved": "JSON export saved",
     "packageFailed": "Package export failed: {{error}}",
     "packageSaved": "Package export saved",
     "pngFailed": "PNG export failed: {{error}}",

@@ -1,6 +1,7 @@
 import { ArrowLeft } from "lucide-react";
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { detailToSlider, sliderToDetail } from "../utils/sliderUtils";
 import { formatYear } from "../utils/timelineUtils";
 import useEscapeKey from "../hooks/useEscapeKey";
 import "../styles/07-modals-menus.css";
@@ -31,9 +32,6 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
   const [previewData, setPreviewData] = useState(null);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
-  const [previewScale, setPreviewScale] = useState(1);
-  const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
-  const [isDraggingPreview, setIsDraggingPreview] = useState(false);
   const [resolution, setResolution] = useState('current');
   const [customWidth, setCustomWidth] = useState('1920');
   const [customHeight, setCustomHeight] = useState('1080');
@@ -43,43 +41,13 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
   const [titleStyle, setTitleStyle] = useState('title-logo');
   const [titleText, setTitleText] = useState('');
   const [exportRange, setExportRange] = useState({ startPercent: 0, endPercent: 100 });
+  // Horizontal spacing for this export only (same as Ctrl+Shift+scroll); null until the modal opens
+  const [detailLevel, setDetailLevel] = useState(null);
 
   const previewTimeoutRef = useRef(null);
-  const previewWrapperRef = useRef(null);
-  const previewDragRef = useRef({ startX: 0, startY: 0, startOffsetX: 0, startOffsetY: 0 });
   const backdropPointerDownRef = useRef(false);
-  const previewContainerRef = useRef(null);
   const minRangePercent = 5;
   const rangeSpanPercent = Math.max(minRangePercent, exportRange.endPercent - exportRange.startPercent);
-  const rangeCenterPercent = (exportRange.startPercent + exportRange.endPercent) / 2;
-  const effectiveRangeSpanPercent = Math.min(100, Math.max(minRangePercent, rangeSpanPercent / previewScale));
-  const baseStartPercent = Math.min(
-    Math.max(0, rangeCenterPercent - effectiveRangeSpanPercent / 2),
-    100 - effectiveRangeSpanPercent,
-  );
-  const maxStartPercent = 100 - effectiveRangeSpanPercent;
-
-  const clampPreviewOffset = useCallback((nextOffset, scaleValue = previewScale) => {
-    const container = previewContainerRef.current;
-    const containerWidth = container?.clientWidth;
-    if (!container || !containerWidth) return nextOffset;
-
-    const scaleSafe = Math.min(10, Math.max(0.3, scaleValue));
-    const span = Math.min(100, Math.max(minRangePercent, rangeSpanPercent / scaleSafe));
-    const center = rangeCenterPercent;
-    const baseStart = Math.min(Math.max(0, center - span / 2), 100 - span);
-    const maxStart = 100 - span;
-    const percentPerPx = span / containerWidth;
-    const minPanPercent = -baseStart;
-    const maxPanPercent = maxStart - baseStart;
-    const minOffsetX = -maxPanPercent / percentPerPx;
-    const maxOffsetX = -minPanPercent / percentPerPx;
-
-    return {
-      x: Math.min(maxOffsetX, Math.max(minOffsetX, nextOffset.x)),
-      y: 0,
-    };
-  }, [previewScale, minRangePercent, rangeSpanPercent, rangeCenterPercent]);
 
   useEffect(() => {
     if (isOpen && timelineData?.file) {
@@ -87,9 +55,6 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
       setFilename(file.id || file.title || "timeline");
       setValidationErrors([]);
       setPreviewData(null);
-      setPreviewScale(1);
-      setPreviewOffset({ x: 0, y: 0 });
-      setIsDraggingPreview(false);
       setResolution('current');
       setBgOption('default');
       setShowTitle(false);
@@ -97,8 +62,16 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
       setTitleStyle('title-logo');
       setTitleText(file.title || "");
       setExportRange({ startPercent: 0, endPercent: 100 });
+      setDetailLevel(timelineViewRef?.current?.getDetailLevel?.() ?? 1);
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The scale is applied to the live timeline while the modal is open, and undone when it closes
+  useEffect(() => {
+    if (!isOpen) return;
+    const view = timelineViewRef?.current;
+    return () => { view?.setExportDetailLevel?.(null); };
+  }, [isOpen, timelineViewRef]);
 
   useEffect(() => {
     if (resolution === "current" && showTitle) {
@@ -116,6 +89,7 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
     previewTimeoutRef.current = setTimeout(async () => {
       setIsGeneratingPreview(true);
       try {
+        if (detailLevel != null) await timelineViewRef.current.setExportDetailLevel?.(detailLevel);
         let previewOpts = {};
         if (bgOption === 'transparent') {
           previewOpts.transparentBg = true;
@@ -137,56 +111,11 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
         clearTimeout(previewTimeoutRef.current);
       }
     };
-  }, [isOpen, bgOption, timelineViewRef]);
-
-  const handleWheel = useCallback((e) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.12 : 0.12;
-    setPreviewScale((current) => {
-      const nextScale = Math.min(10, Math.max(0.3, Number((current + delta).toFixed(2))));
-      setPreviewOffset((currentOffset) => clampPreviewOffset(currentOffset, nextScale));
-      return nextScale;
-    });
-  }, [clampPreviewOffset]);
+  }, [isOpen, bgOption, detailLevel, timelineViewRef]);
 
   const isExporting = Boolean(exportState);
 
   useEscapeKey(isOpen && !isExporting, onClose);
-
-  useEffect(() => {
-    const container = previewContainerRef.current;
-    if (!container || !isOpen) return;
-    container.addEventListener('wheel', handleWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheel);
-  }, [isOpen, handleWheel]);
-
-  useEffect(() => {
-    if (!isDraggingPreview) return;
-
-    const handleMouseMove = (e) => {
-      const drag = previewDragRef.current;
-      const nextOffset = {
-        x: drag.startOffsetX + (e.clientX - drag.startX),
-        y: drag.startOffsetY + (e.clientY - drag.startY),
-      };
-      setPreviewOffset(clampPreviewOffset(nextOffset));
-    };
-
-    const handleMouseUp = () => {
-      setIsDraggingPreview(false);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDraggingPreview, clampPreviewOffset]);
-
-  useEffect(() => {
-    setPreviewOffset((current) => clampPreviewOffset(current));
-  }, [previewScale, previewData, resolution, customWidth, customHeight, clampPreviewOffset]);
 
   if (!isOpen) return null;
 
@@ -199,18 +128,6 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
       onClose();
     }
     backdropPointerDownRef.current = false;
-  };
-
-  const handlePreviewMouseDown = (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    previewDragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      startOffsetX: previewOffset.x,
-      startOffsetY: previewOffset.y,
-    };
-    setIsDraggingPreview(true);
   };
 
   const handleExport = () => {
@@ -265,6 +182,14 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
   const selectedRes = RESOLUTION_OPTIONS.find(r => r.value === resolution) || RESOLUTION_OPTIONS[0];
   const rangeRatio = rangeSpanPercent / 100;
   const rangeWidthPx = previewData?.elementWidth ? previewData.elementWidth * rangeRatio : null;
+  const previewStartPercent = Math.min(exportRange.startPercent, 100 - rangeSpanPercent);
+  // The export keeps only the rows this range uses (TimelineView's measureContentBounds), so the
+  // content is centred in the frame; the size readout and preview use the same band
+  const contentBounds = previewData?.contentBounds?.(previewStartPercent, previewStartPercent + rangeSpanPercent);
+  const contentTop = contentBounds?.top ?? 0;
+  const contentHeight = contentBounds
+    ? Math.max(1, contentBounds.bottom - contentBounds.top)
+    : (previewData?.elementHeight || 1);
 
   const getExportDimensions = () => {
     if (!previewData?.elementWidth || !previewData?.elementHeight) return null;
@@ -276,47 +201,51 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
         const sourceWidth = rangeWidthPx || previewData.elementWidth;
         if (!sourceWidth) return null;
         const scale = w / sourceWidth;
-        return { width: w, height: Math.round(previewData.elementHeight * scale) };
+        return { width: w, height: Math.round(contentHeight * scale) };
       }
       return null;
     }
+    // Presets export at exactly their size; a timeline that doesn't fit is scaled down inside it
     if (selectedRes.width) {
-      const sourceWidth = rangeWidthPx || previewData.elementWidth;
-      const scale = selectedRes.width / sourceWidth;
-      const scaledH = Math.round(previewData.elementHeight * scale);
-      return { width: selectedRes.width, height: Math.max(scaledH, selectedRes.height) };
+      return { width: selectedRes.width, height: selectedRes.height };
     }
     const sourceWidth = rangeWidthPx || previewData.elementWidth;
     return {
       width: Math.round(sourceWidth * 2),
-      height: previewData.elementHeight * 2
+      height: Math.round(contentHeight * 2)
     };
   };
 
-  // Calculate the output aspect ratio for the preview wrapper
-  const getOutputAspectRatio = () => {
+  // Fixed output size (preset, or custom width and height), or null when the height follows the timeline
+  const getTargetSize = () => {
     if (!previewData?.elementWidth || !previewData?.elementHeight) return null;
-
-    let targetW, targetH;
-    if (resolution === 'custom') {
-      targetW = parseInt(customWidth, 10);
-      targetH = parseInt(customHeight, 10);
-      if (!(targetW > 0 && targetH > 0)) return null;
-    } else {
-      targetW = selectedRes.width;
-      targetH = selectedRes.height;
-      if (!targetW || !targetH) return null;
-    }
-
-    const sourceWidth = rangeWidthPx || previewData.elementWidth;
-    const scale = targetW / sourceWidth;
-    const scaledH = previewData.elementHeight * scale;
-    if (targetH <= scaledH) return null; // timeline fills or exceeds target
-
-    return `${targetW} / ${targetH}`;
+    const targetW = resolution === 'custom' ? parseInt(customWidth, 10) : selectedRes.width;
+    const targetH = resolution === 'custom' ? parseInt(customHeight, 10) : selectedRes.height;
+    return targetW > 0 && targetH > 0 ? { targetW, targetH } : null;
   };
 
-  const outputAspectRatio = getOutputAspectRatio();
+  const targetSize = getTargetSize();
+  // Preview frame: the output's shape, holding a window onto the selected range's content band.
+  // With a fixed size the band is scaled to fit inside it and centred, as the export does.
+  const frameW = targetSize ? targetSize.targetW : (rangeWidthPx || 1);
+  const frameH = targetSize ? targetSize.targetH : contentHeight;
+  const bandScale = Math.min(frameW / (rangeWidthPx || 1), frameH / contentHeight);
+  const previewWindowStyle = {
+    position: 'relative',
+    overflow: 'hidden',
+    flexShrink: 0,
+    width: `${((rangeWidthPx || 1) * bandScale / frameW) * 100}%`,
+    height: `${(contentHeight * bandScale / frameH) * 100}%`,
+  };
+  const previewImageStyle = {
+    position: 'absolute',
+    left: `${-(previewStartPercent / rangeSpanPercent) * 100}%`,
+    top: `${-(contentTop / contentHeight) * 100}%`,
+    width: `${100 / rangeRatio}%`,
+    height: 'auto',
+    maxWidth: 'none',
+    maxHeight: 'none',
+  };
   const previewBgColor = bgOption === 'secondary' ? 'var(--surface)'
     : bgOption === 'tertiary' ? 'var(--inset-bg)'
     : undefined;
@@ -334,19 +263,6 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
   const rangeMinYear = previewData?.minYear;
   const rangeMaxYear = previewData?.maxYear;
   const rangeStep = 0.1;
-
-  const containerWidth = previewContainerRef.current?.clientWidth || 1;
-  const panPercent = -(previewOffset.x * effectiveRangeSpanPercent) / containerWidth;
-  const effectiveStartPercent = Math.min(
-    Math.max(0, baseStartPercent + panPercent),
-    maxStartPercent,
-  );
-  const previewImageStyle = {
-    width: `${100 / (effectiveRangeSpanPercent / 100)}%`,
-    maxWidth: "none",
-    maxHeight: "none",
-    marginLeft: `-${(effectiveStartPercent / effectiveRangeSpanPercent) * 100}%`,
-  };
 
   const handleStartRangeChange = (e) => {
     const raw = Number(e.target.value);
@@ -392,34 +308,29 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
 
         <div className="settings-content">
           <div
-            ref={previewContainerRef}
             className={`export-preview-container ${bgOption === 'transparent' ? 'export-preview-transparent' : ''}`}
           >
             {isGeneratingPreview ? (
               <div className="export-preview-loading">{t("exportPng.generatingPreview", "Generating preview...")}</div>
             ) : previewData?.imageUrl ? (
               <div
-                ref={previewWrapperRef}
-                className={`export-preview-wrapper${isDraggingPreview ? ' is-dragging' : ''}`}
-                onMouseDown={handlePreviewMouseDown}
+                className="export-preview-wrapper"
                 style={{
-                  transform: `translate(${previewOffset.x}px, 0)`,
-                  transformOrigin: "center",
-                  justifyContent: 'flex-start',
-                  ...(outputAspectRatio ? {
-                    aspectRatio: outputAspectRatio,
-                    backgroundColor: previewBgColor,
-                    width: '100%',
-                  } : {}),
+                  aspectRatio: `${frameW} / ${frameH}`,
+                  // Width-driven, so cap it where the 368px max height would otherwise squash the shape
+                  width: `min(100%, calc(368px * ${frameW / frameH}))`,
+                  backgroundColor: previewBgColor,
                 }}
               >
-                <img
-                  src={previewData.imageUrl}
-                  alt={t("exportPng.previewAlt", "Export preview")}
-                  className="export-preview-image"
-                  style={previewImageStyle}
-                  draggable={false}
-                />
+                <div style={previewWindowStyle}>
+                  <img
+                    src={previewData.imageUrl}
+                    alt={t("exportPng.previewAlt", "Export preview")}
+                    className="export-preview-image"
+                    style={previewImageStyle}
+                    draggable={false}
+                  />
+                </div>
                 <div className="export-preview-bounds" style={{
                   border: '1px dashed var(--ui-muted)',
                   position: 'absolute',
@@ -509,6 +420,33 @@ export default function ExportPngModal({ isOpen, onClose, onExport, timelineData
                   />
                 </div>
               )}
+            </div>
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-left">
+              <div className="settings-row-label">{t("exportPng.scale.label", "Timeline Scale")}</div>
+              <div className="settings-row-description">
+                {t("exportPng.scale.description", "Spacing between years for this export ({{level}}x). Your timeline isn't changed.", { level: detailLevel ?? 1 })}
+              </div>
+            </div>
+            <div className="settings-row-right">
+              <div className="settings-slider-wrap">
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  className="settings-slider"
+                  aria-label={t("exportPng.scale.label", "Timeline Scale")}
+                  value={detailToSlider(detailLevel ?? 1)}
+                  disabled={isExporting || detailLevel == null}
+                  onChange={(e) => {
+                    const raw = sliderToDetail(Number(e.target.value));
+                    setDetailLevel(Number((Math.round(raw * 10) / 10).toFixed(1)));
+                  }}
+                />
+              </div>
             </div>
           </div>
 

@@ -1568,6 +1568,7 @@ function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    showToast(t("app:toasts.jsonSaved", "JSON export saved"));
   };
 
   const handleDownloadPackage = async () => {
@@ -1702,6 +1703,8 @@ function App() {
 
   const handleExportComplete = useCallback((result) => {
     setExportPngProgress(null);
+    // Cancelling the save dialog keeps the export settings open
+    if (result?.canceled) return;
     setIsExportPngModalOpen(false);
     if (result?.success) {
       showToast(t("app:toasts.pngSaved", "PNG export saved"));
@@ -2680,11 +2683,11 @@ function App() {
               onEditElement={handleEditElement}
               downloadPngTrigger={downloadPngTrigger}
               exportPngOptions={exportPngOptions}
+              onDownloadJson={handleDownloadJSON}
               onExportPng={handleDownloadPNG}
               onExportVideo={handleDownloadVideo}
               onExportProgress={handleExportProgress}
               onExportComplete={handleExportComplete}
-              onNotify={showToast}
               rightPanelWidth={rightWidth}
               isRightPanelOpen={isRightPanelVisible}
               leftPanelWidth={currentLeftWidth}

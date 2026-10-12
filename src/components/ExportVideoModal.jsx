@@ -2,6 +2,7 @@ import { ArrowLeft } from "lucide-react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
+import { drawTitleWatermark, saveExportFile } from "../utils/exportUtils";
 import { formatYear } from "../utils/timelineUtils";
 import useEscapeKey from "../hooks/useEscapeKey";
 import "../styles/07-modals-menus.css";
@@ -11,6 +12,30 @@ const RESOLUTION_OPTIONS = [
   { value: '4k', label: '4K (3840 × 2160)', width: 3840, height: 2160 },
   { value: 'custom', label: 'Custom', width: null, height: null },
 ];
+
+// Lowest H.264 level that allows this frame size and macroblock rate (fps × frame size).
+// Levels as the hex suffix of avc1.6400xx: 4.0, 4.2, 5.0, 5.1, 5.2, 6.0, 6.1, 6.2
+const AVC_LEVELS = [
+  { code: '28', maxFrameMbs: 8192, maxMbps: 245760 },
+  { code: '2A', maxFrameMbs: 8704, maxMbps: 522240 },
+  { code: '32', maxFrameMbs: 22080, maxMbps: 589824 },
+  { code: '33', maxFrameMbs: 36864, maxMbps: 983040 },
+  { code: '34', maxFrameMbs: 36864, maxMbps: 2073600 },
+  { code: '3C', maxFrameMbs: 139264, maxMbps: 4177920 },
+  { code: '3D', maxFrameMbs: 139264, maxMbps: 8355840 },
+  { code: '3E', maxFrameMbs: 139264, maxMbps: 16711680 },
+];
+
+function pickAvcLevel(width, height, fps) {
+  const frameMbs = Math.ceil(width / 16) * Math.ceil(height / 16);
+  const level = AVC_LEVELS.find((l) => frameMbs <= l.maxFrameMbs && frameMbs * fps <= l.maxMbps);
+  return (level ?? AVC_LEVELS[AVC_LEVELS.length - 1]).code;
+}
+
+// About 0.1 bits per pixel per frame: ~6 Mbps for 1080p30, ~50 Mbps for 4K60
+function pickBitrate(width, height, fps) {
+  return Math.min(80_000_000, Math.max(8_000_000, Math.round(width * height * fps * 0.1)));
+}
 
 const DURATION_OPTIONS = [
   { value: 5, label: '5 seconds' },
@@ -115,9 +140,7 @@ export default function ExportVideoModal({ isOpen, onClose, timelineData, timeli
       setIsGeneratingPreview(true);
       try {
         let previewOpts = {};
-        if (bgOption === 'transparent') {
-          previewOpts.transparentBg = true;
-        } else if (bgOption === 'secondary' || bgOption === 'tertiary') {
+        if (bgOption === 'secondary' || bgOption === 'tertiary') {
           const varName = bgOption === 'secondary' ? '--surface' : '--inset-bg';
           previewOpts.customBg = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
         }
@@ -148,8 +171,9 @@ export default function ExportVideoModal({ isOpen, onClose, timelineData, timeli
 
   const getOutputDimensions = () => {
     if (resolution === 'custom') {
-      const w = Math.min(7680, parseInt(customWidth, 10));
-      const h = Math.min(4320, parseInt(customHeight, 10));
+      // H.264 needs even dimensions, so round odd sizes down
+      const w = Math.min(7680, parseInt(customWidth, 10)) & ~1;
+      const h = Math.min(4320, parseInt(customHeight, 10)) & ~1;
       if (w > 0 && h > 0) return { width: w, height: h };
       return null;
     }
@@ -183,27 +207,49 @@ export default function ExportVideoModal({ isOpen, onClose, timelineData, timeli
       const actualDuration = getDurationValue();
       const actualFps = fps;
 
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = previewData.imageUrl;
-      });
-
-      const rangeRatio = Math.max(0.05, (exportRange.endPercent - exportRange.startPercent) / 100);
-      const startOffset = exportRange.startPercent / 100;
-
-      const sourceFullWidth = img.naturalWidth;
-      const sourceFullHeight = img.naturalHeight;
-      const sourceRegionStart = startOffset * sourceFullWidth;
-      const sourceRegionWidth = rangeRatio * sourceFullWidth;
-
       const outputW = dims.width;
       const outputH = dims.height;
       const outputAspect = outputW / outputH;
-
       const effectiveZoom = Math.min(VIDEO_ZOOM_MAX, Math.max(VIDEO_ZOOM_MIN, zoom));
+
+      const codecConfig = {
+        codec: `avc1.6400${pickAvcLevel(outputW, outputH, actualFps)}`,
+        width: outputW,
+        height: outputH,
+        bitrate: pickBitrate(outputW, outputH, actualFps),
+        framerate: actualFps,
+      };
+      const support = await VideoEncoder.isConfigSupported(codecConfig);
+      if (!support?.supported) {
+        throw new Error(t("exportVideo.errors.unsupported", "{{width}} × {{height}} at {{fps}} fps isn't supported by this device's video encoder. Try a smaller size or a lower frame rate.", { width: outputW, height: outputH, fps: actualFps }));
+      }
+
+      let previewBg = {};
+      if (bgOption === 'secondary' || bgOption === 'tertiary') {
+        const varName = bgOption === 'secondary' ? '--surface' : '--inset-bg';
+        previewBg = { customBg: getComputedStyle(document.documentElement).getPropertyValue(varName).trim() };
+      }
+
+      // Render just the selected range at the size the video needs, instead of reusing the small
+      // preview: the visible slice (timeline height / zoom) has to fill the output height. The
+      // render runs at least one frame's width past the range start so a short range still fills it.
+      const elementWidth = previewData.elementWidth;
+      const elementHeight = previewData.elementHeight || outputH;
+      const rangeRatio = Math.max(0.05, (exportRange.endPercent - exportRange.startPercent) / 100);
+      const regionStartCss = (exportRange.startPercent / 100) * elementWidth;
+      const regionWidthCss = rangeRatio * elementWidth;
+      const frameWidthCss = (elementHeight / effectiveZoom) * outputAspect;
+      const renderWidthCss = Math.min(elementWidth - regionStartCss, Math.max(regionWidthCss, frameWidthCss));
+      const { canvas: source } = await timelineViewRef.current.renderExportCanvas({
+        scale: (outputH * effectiveZoom) / elementHeight,
+        region: { x: regionStartCss, width: renderWidthCss },
+        ...previewBg,
+      });
+
+      const sourceFullWidth = source.width;
+      const sourceFullHeight = source.height;
+      const sourceRegionStart = 0;
+      const sourceRegionWidth = sourceFullWidth * (regionWidthCss / renderWidthCss);
 
       const cropHeight = sourceFullHeight / effectiveZoom;
       const cropWidth = cropHeight * outputAspect;
@@ -224,93 +270,27 @@ export default function ExportVideoModal({ isOpen, onClose, timelineData, timeli
         fastStart: 'in-memory',
       });
 
+      // Encoder errors arrive asynchronously; keep the first one and stop at the next frame
+      let encoderError = null;
       encoder = new VideoEncoder({
         output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-        error: (e) => console.error('Encoder error:', e),
+        error: (e) => { encoderError = encoderError || e; },
       });
+      encoder.configure(codecConfig);
 
-      // PLevel 4.0 caps at ~2MP, need 5.1+ for 4K
-      const codedArea = outputW * outputH;
-      const avcLevel = codedArea <= 2097152 ? '28' : codedArea <= 8388608 ? '33' : '34';
-      encoder.configure({
-        codec: `avc1.6400${avcLevel}`,
-        width: outputW,
-        height: outputH,
-        bitrate: 8_000_000,
-        framerate: actualFps,
-      });
-
-      let bgColor = null;
-      if (bgOption === 'secondary' || bgOption === 'tertiary') {
-        const varName = bgOption === 'secondary' ? '--surface' : '--inset-bg';
-        bgColor = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-      } else if (bgOption !== 'transparent') {
-        bgColor = getComputedStyle(document.documentElement).getPropertyValue('--app-bg').trim();
-      }
+      const bgColor = previewBg.customBg || getComputedStyle(document.documentElement).getPropertyValue('--app-bg').trim();
 
       const titleStyleValue = titleStyle || 'title-logo';
-      const showText = titleStyleValue !== 'logo-only';
-      const showLogo = titleStyleValue !== 'title-only';
-      const watermarkText = showText ? String(titleText || '') : '';
-      const canRenderTitleWatermark =
-        showTitle && (titleStyleValue === 'logo-only' || Boolean(watermarkText));
       let watermarkCanvas = null;
-      if (canRenderTitleWatermark) {
-        const wmCanvas = document.createElement('canvas');
-        wmCanvas.width = outputW;
-        wmCanvas.height = outputH;
-        const wmCtx = wmCanvas.getContext('2d');
-        const fontSize = Math.max(14, Math.round(outputW * 0.018));
-        const padding = Math.round(fontSize * 1.5);
-        const computedStyle = getComputedStyle(document.documentElement);
-        const themeFont = computedStyle.getPropertyValue('--app-font-family').trim() || 'Inter, system-ui, sans-serif';
-        const themeColor = computedStyle.getPropertyValue('--text-primary').trim() || '#888';
-        wmCtx.font = `700 ${fontSize}px ${themeFont}`;
-        wmCtx.fillStyle = themeColor;
-
-        const pos = titlePosition || 'bottom-right';
-        const metrics = wmCtx.measureText(watermarkText);
-        const logoHeight = Math.round(fontSize * 0.8);
-        const logoWidth = (67 / 25) * logoHeight;
-        const logoGap = Math.round(fontSize * 0.35);
-        const logoBaselineOffset = fontSize * 0.08;
-        const totalWidth = metrics.width + (showLogo ? ((showText ? logoGap : 0) + logoWidth) : 0);
-        let x;
-        let y;
-
-        if (pos.includes('left')) x = padding;
-        else if (pos.includes('center')) x = (outputW - totalWidth) / 2;
-        else x = outputW - totalWidth - padding;
-
-        if (pos.includes('top')) y = padding + fontSize;
-        else y = outputH - padding;
-
-        if (showText) {
-          wmCtx.fillText(watermarkText, x, y);
-        }
-
-        if (showLogo) {
-          const logoX = x + metrics.width + (showText ? logoGap : 0);
-          const logoY = y - logoHeight + logoBaselineOffset;
-          const scale = logoHeight / 25;
-          wmCtx.save();
-          wmCtx.translate(logoX, logoY);
-          wmCtx.scale(scale, scale);
-          wmCtx.fillRect(0, 8.89844, 28.2656, 6.80469);
-          wmCtx.fillRect(35.0703, 0, 31.9297, 7.32812);
-          wmCtx.fillRect(35.0703, 16.75, 31.9297, 7.32812);
-          wmCtx.beginPath();
-          wmCtx.moveTo(35.0703, 0);
-          wmCtx.lineTo(35.0703, 24.0781);
-          wmCtx.lineTo(33.2656, 24.0781);
-          wmCtx.bezierCurveTo(30.5042, 24.0781, 28.2656, 21.8395, 28.2656, 19.0781);
-          wmCtx.lineTo(28.2656, 5);
-          wmCtx.bezierCurveTo(28.2656, 2.23858, 30.5042, 0, 33.2656, 0);
-          wmCtx.closePath();
-          wmCtx.fill();
-          wmCtx.restore();
-        }
-        watermarkCanvas = wmCanvas;
+      if (showTitle && (titleStyleValue === 'logo-only' || Boolean(String(titleText || '').trim()))) {
+        watermarkCanvas = document.createElement('canvas');
+        watermarkCanvas.width = outputW;
+        watermarkCanvas.height = outputH;
+        drawTitleWatermark(watermarkCanvas.getContext('2d'), outputW, outputH, {
+          title: titleText,
+          titleStyle: titleStyleValue,
+          position: titlePosition || 'bottom-right',
+        });
       }
 
       const totalFrames = Math.ceil(actualDuration * actualFps);
@@ -319,15 +299,13 @@ export default function ExportVideoModal({ isOpen, onClose, timelineData, timeli
 
       for (let i = 0; i < totalFrames; i++) {
         if (exportCancelRef.current) break;
+        if (encoderError) throw encoderError;
 
-        const progress = i / totalFrames;
+        // The last frame lands exactly on the end of the range
+        const progress = totalFrames > 1 ? i / (totalFrames - 1) : 0;
 
-        if (bgColor) {
-          ctx.fillStyle = bgColor;
-          ctx.fillRect(0, 0, outputW, outputH);
-        } else {
-          ctx.clearRect(0, 0, outputW, outputH);
-        }
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, outputW, outputH);
 
         const vpLeft = sourceRegionStart + progress * totalPanPx;
         const vpTop = yOffset;
@@ -342,7 +320,7 @@ export default function ExportVideoModal({ isOpen, onClose, timelineData, timeli
         const dstY = (srcY - vpTop) / cropHeight * outputH;
         const dstW = srcW / cropWidth * outputW;
         const dstH = srcH / cropHeight * outputH;
-        ctx.drawImage(img, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH);
+        ctx.drawImage(source, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH);
         if (watermarkCanvas) {
           ctx.drawImage(watermarkCanvas, 0, 0);
         }
@@ -370,19 +348,18 @@ export default function ExportVideoModal({ isOpen, onClose, timelineData, timeli
       }
 
       await encoder.flush();
+      if (encoderError) throw encoderError;
       encoder.close();
       muxer.finalize();
 
       const blob = new Blob([muxerTarget.buffer], { type: 'video/mp4' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
       const exportFilename = (filename || "").trim() || (timelineData?.file?.id || 'timeline');
-      link.download = `${exportFilename}.mp4`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const saved = await saveExportFile(blob, `${exportFilename}.mp4`, { filterName: 'MP4 Video', extension: 'mp4' });
+      if (saved?.canceled) {
+        onExportComplete?.({ canceled: true });
+        return;
+      }
+      if (!saved?.success) throw new Error(saved?.error || 'Could not save the file');
       onExportComplete?.({ success: true });
     } catch (error) {
       console.error('Error exporting video:', error);

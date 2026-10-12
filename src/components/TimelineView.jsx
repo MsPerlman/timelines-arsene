@@ -21,6 +21,7 @@ import { withAlpha, blendColors, normalizeColor } from "../utils/colorUtils";
 import { parseFilterQuery, matchesFilter, tokenizeFilterQuery, buildFilterContext, normalizeTag, quoteFilterValue } from "../utils/filterUtils";
 import { FileJson, Image, Video, Settings, Plus, Minus, CopyPlus, Trash2, Edit2, ListFilter, Play, Pause, Tag, Eye, EyeOff, Map as MapIcon, MapPin, GanttChartSquare, Table2, ExternalLink, HelpCircle, Maximize2, X, History, Crosshair, ArrowLeftRight } from "lucide-react";
 import { ICON_MAP } from "../config/elementIcons";
+import { drawTitleWatermark, saveExportFile } from "../utils/exportUtils";
 import { DETAIL_MIN, DETAIL_MAX, clamp } from "../utils/sliderUtils";
 
 const FILTER_HISTORY_KEY = "timelines-filter-query-history";
@@ -393,6 +394,48 @@ function OverflowTags({ tags, tagColors, getReadableTextColor: readableColor }) 
   );
 }
 
+// html2canvas moves a transformed element's contents but not its overflow clip, so a clipped,
+// translated box (event cards with thumbnails use translateX(-50%) + overflow: hidden) renders its
+// contents shifted out of the clip. On the clone, turn pure translations into left/top offsets.
+const flattenTranslatedClips = (clonedDocument, clonedRoot) => {
+  const view = clonedDocument.defaultView;
+  if (!view || !clonedRoot) return;
+  clonedRoot.querySelectorAll("*").forEach((el) => {
+    const cs = view.getComputedStyle(el);
+    if ((cs.overflowX === "visible" && cs.overflowY === "visible") || cs.position === "static") return;
+    const match = /^matrix\(1, 0, 0, 1, (-?[\d.e-]+), (-?[\d.e-]+)\)$/.exec(cs.transform);
+    if (!match) return;
+    const tx = Number(match[1]);
+    const ty = Number(match[2]);
+    el.style.left = `${(parseFloat(cs.left) || 0) + tx}px`;
+    el.style.top = `${(parseFloat(cs.top) || 0) + ty}px`;
+    el.style.transform = "none";
+  });
+};
+
+// html2canvas ignores object-fit and stretches images to their box. On the clone, swap cover/contain
+// images for a div with the same classes and a background image, which it does crop/fit.
+const replaceObjectFitImages = (clonedDocument, clonedRoot) => {
+  const view = clonedDocument.defaultView;
+  if (!view || !clonedRoot) return;
+  clonedRoot.querySelectorAll("img").forEach((img) => {
+    const fit = view.getComputedStyle(img).objectFit;
+    if (fit !== "cover" && fit !== "contain") return;
+    const box = clonedDocument.createElement("div");
+    box.className = img.className;
+    box.style.cssText = img.style.cssText;
+    box.style.backgroundImage = `url("${img.currentSrc || img.src}")`;
+    box.style.backgroundSize = fit;
+    box.style.backgroundPosition = "center";
+    box.style.backgroundRepeat = "no-repeat";
+    img.replaceWith(box);
+  });
+};
+
+// Browser canvas limits: Chromium caps each side at 16384px and the total area well below 16384²
+const MAX_EXPORT_CANVAS_DIM = 16384;
+const MAX_EXPORT_CANVAS_AREA = 120_000_000;
+
 // html2canvas emits no progress events
 function creepProgress(from, to, stage, report) {
   const started = Date.now();
@@ -421,9 +464,9 @@ const TimelineView = forwardRef(function TimelineView({
   exportPngOptions,
   onExportPng,
   onExportVideo,
+  onDownloadJson,
   onExportProgress,
   onExportComplete,
-  onNotify,
   rightPanelWidth = 0,
   isRightPanelOpen = false,
   leftPanelWidth = 0,
@@ -2802,272 +2845,243 @@ const TimelineView = forwardRef(function TimelineView({
     action();
   };
 
-  const handleDownloadJSON = () => {
-    const dataStr = JSON.stringify(timelineData, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${file?.id || 'timeline'}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    onNotify?.('JSON export saved');
-  };
-
-  const handleDownloadPNG = async () => {
+  // One html2canvas render shared by PNG export, export previews and video. Export-only changes
+  // (no zoom/pan transform, background override) are made on html2canvas's clone, never the live
+  // view, so the timeline doesn't jump while exporting.
+  // region: optional { x, width, y?, height? } in timeline px to render only that slice. Canvas size
+  // limits then apply to the slice, not the whole timeline, so small ranges stay sharp at large sizes.
+  const renderTimelineCanvas = async ({ scale, transparentBg = false, customBg = null, region = null }) => {
     const timelineEl = timelineRef.current;
-    if (!timelineEl) {
-      onExportComplete?.({ success: false, error: 'Timeline is not ready' });
-      return;
+    if (!timelineEl) throw new Error('Timeline is not ready');
+    const html2canvas = (await import('html2canvas')).default;
+
+    const fullWidth = timelineEl.scrollWidth;
+    const fullHeight = calculatedHeight + 100;
+    const regionX = region ? Math.max(0, Math.min(fullWidth - 1, Math.floor(region.x))) : 0;
+    const width = region ? Math.max(1, Math.min(fullWidth - regionX, Math.ceil(region.width))) : fullWidth;
+    const regionY = region?.height ? Math.max(0, Math.min(fullHeight - 1, Math.floor(region.y ?? 0))) : 0;
+    const height = region?.height ? Math.max(1, Math.min(fullHeight - regionY, Math.ceil(region.height))) : fullHeight;
+    const safeScale = Math.min(
+      scale,
+      MAX_EXPORT_CANVAS_DIM / width,
+      MAX_EXPORT_CANVAS_DIM / height,
+      Math.sqrt(MAX_EXPORT_CANVAS_AREA / (width * height)),
+    );
+
+    // The crop window must be where the timeline sits without its transform, matching the clone.
+    // Measured and restored in the same task, so nothing is painted in between.
+    const liveTransform = timelineEl.style.transform;
+    timelineEl.style.transform = 'none';
+    const rect = timelineEl.getBoundingClientRect();
+    timelineEl.style.transform = liveTransform;
+
+    const appBg = getComputedStyle(document.documentElement).getPropertyValue('--app-bg').trim();
+    const canvas = await html2canvas(timelineEl, {
+      backgroundColor: transparentBg ? null : (customBg || appBg),
+      scale: safeScale,
+      useCORS: true,
+      logging: false,
+      x: rect.left + window.scrollX + regionX,
+      y: rect.top + window.scrollY + regionY,
+      width,
+      height,
+      windowWidth: fullWidth,
+      windowHeight: fullHeight,
+      onclone: (clonedDocument, clonedTimeline) => {
+        clonedTimeline.style.transform = 'none';
+        clonedTimeline.style.transformOrigin = '';
+        if (transparentBg) {
+          clonedDocument.documentElement.style.setProperty('--app-bg', 'transparent');
+        } else if (customBg) {
+          clonedDocument.documentElement.style.setProperty('--app-bg', customBg);
+        }
+        normalizeHtml2CanvasColors(clonedDocument, clonedTimeline);
+        flattenTranslatedClips(clonedDocument, clonedTimeline);
+        replaceObjectFitImages(clonedDocument, clonedTimeline);
+      },
+    });
+    return { canvas, scale: safeScale, regionX, width, height, appBg };
+  };
+  // Vertical band (timeline px, padded) holding what's actually drawn between xStart and xEnd. A small
+  // range often uses only a few of the timeline's rows, so exports trim to this band to keep the
+  // content centred in the frame. Found from the last export preview's pixels rather than the DOM,
+  // so only drawn content counts: each column is compared with its own usual colour (the median of
+  // sampled rows), which makes full-height grid lines read as background.
+  const previewScanRef = useRef(null); // { canvas, scale: scan px per timeline px, height, cache }
+  const measureContentBounds = (xStart, xEnd) => {
+    const scan = previewScanRef.current;
+    if (!scan) return null;
+    const cacheKey = `${Math.round(xStart)}:${Math.round(xEnd)}`;
+    if (scan.cache.has(cacheKey)) return scan.cache.get(cacheKey);
+
+    const { canvas, scale, height: fullHeight } = scan;
+    const x0 = Math.max(0, Math.min(canvas.width - 1, Math.floor(xStart * scale)));
+    const x1 = Math.max(x0 + 1, Math.min(canvas.width, Math.ceil(xEnd * scale)));
+    const w = x1 - x0;
+    const h = canvas.height;
+    const data = canvas.getContext('2d').getImageData(x0, 0, w, h).data;
+
+    const SAMPLES = 15;
+    const background = new Uint8ClampedArray(w * 4);
+    const channel = new Array(SAMPLES);
+    for (let x = 0; x < w; x++) {
+      for (let c = 0; c < 4; c++) {
+        for (let i = 0; i < SAMPLES; i++) {
+          const y = Math.round((i * (h - 1)) / (SAMPLES - 1));
+          channel[i] = data[(y * w + x) * 4 + c];
+        }
+        channel.sort((p, q) => p - q);
+        background[x * 4 + c] = channel[SAMPLES >> 1];
+      }
     }
 
+    // The grid's year labels run along the top and bottom edges; they aren't content
+    const edge = Math.round(48 * scale);
+    const minCount = Math.max(2, Math.round(w * 0.002));
+    const isContentRow = (y) => {
+      let count = 0;
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const j = x * 4;
+        if (Math.max(
+          Math.abs(data[i] - background[j]),
+          Math.abs(data[i + 1] - background[j + 1]),
+          Math.abs(data[i + 2] - background[j + 2]),
+          Math.abs(data[i + 3] - background[j + 3]),
+        ) > 24 && ++count >= minCount) return true;
+      }
+      return false;
+    };
+    let top = edge;
+    while (top < h - edge && !isContentRow(top)) top++;
+    let bottom = h - edge - 1;
+    while (bottom > top && !isContentRow(bottom)) bottom--;
+
+    const pad = 24;
+    const bounds = top >= h - edge
+      ? null
+      : { top: Math.max(0, top / scale - pad), bottom: Math.min(fullHeight, (bottom + 1) / scale + pad) };
+    scan.cache.set(cacheKey, bounds);
+    return bounds;
+  };
+
+  // Keeps a downscaled copy of a preview render to scan; called whenever a preview is generated
+  const rememberPreviewForScan = (canvas, elementWidth, elementHeight) => {
+    const factor = Math.min(1, 4000 / canvas.width);
+    const copy = document.createElement('canvas');
+    copy.width = Math.max(1, Math.round(canvas.width * factor));
+    copy.height = Math.max(1, Math.round(canvas.height * factor));
+    copy.getContext('2d', { willReadFrequently: true }).drawImage(canvas, 0, 0, copy.width, copy.height);
+    previewScanRef.current = { canvas: copy, scale: copy.width / elementWidth, height: elementHeight, cache: new Map() };
+  };
+  const rememberPreviewForScanRef = useRef(rememberPreviewForScan);
+  rememberPreviewForScanRef.current = rememberPreviewForScan;
+
+  // Read through a ref by the imperative handle below, which isn't rebuilt every render
+  const renderTimelineCanvasRef = useRef(renderTimelineCanvas);
+  renderTimelineCanvasRef.current = renderTimelineCanvas;
+  const measureContentBoundsRef = useRef(measureContentBounds);
+  measureContentBoundsRef.current = measureContentBounds;
+
+  const handleDownloadPNG = async () => {
+    const opts = exportPngOptions || {};
     const report = (percent, stage) => onExportProgress?.({ percent, stage });
     let stopCreep = null;
-    report(2, 'Preparing export...');
-
-    // hoisted so finally can restore after a failed render
-    const currentTransform = timelineEl.style.transform;
-    const currentTransformOrigin = timelineEl.style.transformOrigin;
-    const root = document.documentElement;
-    const originalPrimaryBg = getComputedStyle(root).getPropertyValue('--app-bg').trim();
-    const overridesBg = Boolean(exportPngOptions?.transparentBg || exportPngOptions?.customBg);
+    report(2, t('exportProgress.preparing', 'Preparing export...'));
 
     try {
-      // Dynamically import html2canvas
-      const html2canvas = (await import('html2canvas')).default;
+      const timelineEl = timelineRef.current;
+      if (!timelineEl) throw new Error('Timeline is not ready');
 
-      // Temporarily remove transform
-      timelineEl.style.transform = 'none';
-      timelineEl.style.transformOrigin = '';
-
-      // Set --app-bg to transparent or custom color if requested
-      if (exportPngOptions?.transparentBg) {
-        root.style.setProperty('--app-bg', 'transparent');
-      } else if (exportPngOptions?.customBg) {
-        root.style.setProperty('--app-bg', exportPngOptions.customBg);
-      }
-
-      const requestedStartYear = Number(exportPngOptions?.exportStartYear);
-      const requestedEndYear = Number(exportPngOptions?.exportEndYear);
+      const requestedStartYear = Number(opts.exportStartYear);
+      const requestedEndYear = Number(opts.exportEndYear);
       const hasCustomRange = Number.isFinite(requestedStartYear) && Number.isFinite(requestedEndYear);
-      const targetW = exportPngOptions?.targetWidth;
-      const minRequestedYear = hasCustomRange ? Math.min(requestedStartYear, requestedEndYear) : null;
-      const maxRequestedYear = hasCustomRange ? Math.max(requestedStartYear, requestedEndYear) : null;
-      const sourceStartPxBase = hasCustomRange ? yearToPx(minRequestedYear) : 0;
-      const sourceEndPxBase = hasCustomRange ? yearToPx(maxRequestedYear) : timelineEl.scrollWidth;
+      const sourceStartPxBase = hasCustomRange ? yearToPx(Math.min(requestedStartYear, requestedEndYear)) : 0;
+      const sourceEndPxBase = hasCustomRange ? yearToPx(Math.max(requestedStartYear, requestedEndYear)) : timelineEl.scrollWidth;
       const sourceWidthPxBase = Math.max(1, sourceEndPxBase - sourceStartPxBase);
+      const targetW = opts.targetWidth || null;
+      const targetH = opts.targetHeight || null;
 
-      let scale = 2;
-      if (targetW) {
-        // For fixed export presets, use range width as the zoom window so output width stays at targetW.
-        scale = hasCustomRange
-          ? targetW / sourceWidthPxBase
-          : targetW / timelineEl.scrollWidth;
-      }
+      // With a preset width, render the selected range at exactly that width
+      const requestedScale = targetW ? targetW / sourceWidthPxBase : 2;
 
-      const bgColor = exportPngOptions?.transparentBg
-        ? null
-        : (exportPngOptions?.customBg || originalPrimaryBg);
-
-      const targetH = exportPngOptions?.targetHeight;
-
-      const elFullWidth = timelineEl.scrollWidth;
-      const exportHeight = calculatedHeight + 100;
-      // Clamp so canvas pixel dimensions stay within browser limits
-      const MAX_CANVAS_DIM = 16384;
-      const maxScale = Math.min(
-        MAX_CANVAS_DIM / elFullWidth,
-        MAX_CANVAS_DIM / exportHeight,
-      );
-      const safeScale = Math.min(scale, maxScale);
-      report(8, 'Rendering timeline...');
-      stopCreep = creepProgress(8, 65, 'Rendering timeline...', report);
-      const canvas = await html2canvas(timelineEl, {
-        backgroundColor: bgColor,
-        scale: safeScale,
-        logging: false,
-        width: elFullWidth,
-        height: exportHeight,
-        windowWidth: elFullWidth,
-        windowHeight: exportHeight,
-        onclone: normalizeHtml2CanvasColors,
+      const renderingStage = t('exportProgress.rendering', 'Rendering timeline...');
+      report(8, renderingStage);
+      stopCreep = creepProgress(8, 65, renderingStage, report);
+      const bounds = measureContentBounds(sourceStartPxBase, sourceEndPxBase);
+      const { canvas, appBg } = await renderTimelineCanvas({
+        scale: requestedScale,
+        transparentBg: opts.transparentBg,
+        customBg: opts.customBg,
+        region: {
+          x: sourceStartPxBase,
+          width: sourceWidthPxBase,
+          y: bounds?.top ?? 0,
+          height: bounds ? bounds.bottom - bounds.top : null,
+        },
       });
-
       stopCreep();
       stopCreep = null;
-      report(70, 'Compositing image...');
+      report(70, t('exportProgress.compositing', 'Compositing image...'));
 
-      if (exportPngOptions?.transparentBg || exportPngOptions?.customBg) {
-        root.style.setProperty('--app-bg', originalPrimaryBg);
-      }
-
-      timelineEl.style.transform = currentTransform;
-      timelineEl.style.transformOrigin = currentTransformOrigin;
+      const fillColor = opts.customBg || appBg;
+      const paintBackground = (ctx, w, h) => {
+        if (opts.transparentBg) ctx.clearRect(0, 0, w, h);
+        else {
+          ctx.fillStyle = fillColor;
+          ctx.fillRect(0, 0, w, h);
+        }
+      };
 
       let finalCanvas = canvas;
-      const fillColor = exportPngOptions?.customBg || originalPrimaryBg;
-      if (hasCustomRange) {
-        const pxStart = sourceStartPxBase * scale;
-        const pxEnd = sourceEndPxBase * scale;
-        const sourceStart = Math.max(0, Math.min(finalCanvas.width, Math.round(pxStart)));
-        const sourceEnd = Math.max(0, Math.min(finalCanvas.width, Math.round(pxEnd)));
-        const sourceWidth = Math.max(1, sourceEnd - sourceStart);
 
-        if (sourceWidth > 0) {
-          const croppedCanvas = document.createElement('canvas');
-          croppedCanvas.width = sourceWidth;
-          croppedCanvas.height = finalCanvas.height;
-          const cropCtx = croppedCanvas.getContext('2d');
-          cropCtx.drawImage(
-            finalCanvas,
-            sourceStart,
-            0,
-            sourceWidth,
-            finalCanvas.height,
-            0,
-            0,
-            sourceWidth,
-            finalCanvas.height
-          );
-          finalCanvas = croppedCanvas;
+      // Output exactly the requested size: scale the timeline to fit inside it (never crop content)
+      // and centre it, padding the rest with the background
+      if (targetW || targetH) {
+        const outW = targetW || finalCanvas.width;
+        const outH = targetH || Math.max(1, Math.round((finalCanvas.height * outW) / finalCanvas.width));
+        if (outW !== finalCanvas.width || outH !== finalCanvas.height) {
+          const fit = Math.min(outW / finalCanvas.width, outH / finalCanvas.height);
+          const drawW = Math.round(finalCanvas.width * fit);
+          const drawH = Math.round(finalCanvas.height * fit);
+          const out = document.createElement('canvas');
+          out.width = outW;
+          out.height = outH;
+          const ctx = out.getContext('2d');
+          paintBackground(ctx, outW, outH);
+          ctx.drawImage(finalCanvas, Math.round((outW - drawW) / 2), Math.round((outH - drawH) / 2), drawW, drawH);
+          finalCanvas = out;
         }
       }
 
-      // In fixed presets, custom-range capture already maps to target width (zoom behavior).
-      // Keep a fallback resize for non-range exports and rounding differences.
-      if (targetW && (!hasCustomRange || Math.abs(finalCanvas.width - targetW) > 1)) {
-        const resizedCanvas = document.createElement('canvas');
-        resizedCanvas.width = targetW;
-        resizedCanvas.height = Math.max(1, Math.round((finalCanvas.height * targetW) / finalCanvas.width));
-        const resizedCtx = resizedCanvas.getContext('2d');
-
-        if (exportPngOptions?.transparentBg) {
-          resizedCtx.clearRect(0, 0, resizedCanvas.width, resizedCanvas.height);
-        } else {
-          resizedCtx.fillStyle = fillColor;
-          resizedCtx.fillRect(0, 0, resizedCanvas.width, resizedCanvas.height);
-        }
-
-        resizedCtx.drawImage(finalCanvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
-        finalCanvas = resizedCanvas;
+      const titleStyle = opts.titleStyle || 'title-logo';
+      if (opts.showTitle && (titleStyle === 'logo-only' || Boolean(opts.title))) {
+        drawTitleWatermark(finalCanvas.getContext('2d'), finalCanvas.width, finalCanvas.height, {
+          title: opts.title,
+          titleStyle,
+          position: opts.titlePosition || 'bottom-right',
+        });
       }
 
-      // If target height is taller than the rendered canvas, pad and center vertically
-      if (targetH && finalCanvas.height < targetH) {
-        const outCanvas = document.createElement('canvas');
-        outCanvas.width = finalCanvas.width;
-        outCanvas.height = targetH;
-        const ctx = outCanvas.getContext('2d');
-
-        if (exportPngOptions?.transparentBg) {
-          ctx.clearRect(0, 0, outCanvas.width, targetH);
-        } else {
-          ctx.fillStyle = fillColor;
-          ctx.fillRect(0, 0, outCanvas.width, targetH);
-        }
-
-        // Center the timeline vertically in padded output.
-        const yOffset = Math.round((targetH - finalCanvas.height) / 2);
-        ctx.drawImage(finalCanvas, 0, yOffset);
-        finalCanvas = outCanvas;
-      }
-
-
-      // Draw title watermark if requested
-      const titleStyle = exportPngOptions?.titleStyle || 'title-logo';
-      const canRenderTitleWatermark =
-        exportPngOptions?.showTitle &&
-        (titleStyle === 'logo-only' || Boolean(exportPngOptions?.title));
-      if (canRenderTitleWatermark) {
-        const w = finalCanvas.width;
-        const h = finalCanvas.height;
-        const outCanvas = document.createElement('canvas');
-        outCanvas.width = w;
-        outCanvas.height = h;
-        const ctx = outCanvas.getContext('2d');
-        ctx.drawImage(finalCanvas, 0, 0);
-
-        const fontSize = Math.max(14, Math.round(w * 0.018));
-        const padding = Math.round(fontSize * 1.5);
-        const computedStyle = getComputedStyle(document.documentElement);
-        const themeFont = computedStyle.getPropertyValue('--app-font-family').trim() || 'Inter, system-ui, sans-serif';
-        const themeColor = computedStyle.getPropertyValue('--text-primary').trim() || '#888';
-        ctx.font = `700 ${fontSize}px ${themeFont}`;
-        ctx.fillStyle = themeColor;
-
-        const pos = exportPngOptions.titlePosition || 'bottom-right';
-        const showText = titleStyle !== 'logo-only';
-        const showLogo = titleStyle !== 'title-only';
-        const titleText = showText ? exportPngOptions.title : '';
-        const metrics = ctx.measureText(titleText);
-        const logoHeight = Math.round(fontSize * 0.8);
-        const logoWidth = (67 / 25) * logoHeight;
-        const logoGap = Math.round(fontSize * 0.35);
-        const logoBaselineOffset = fontSize * 0.08;
-        const totalWidth = metrics.width + (showLogo ? ((showText ? logoGap : 0) + logoWidth) : 0);
-        let x, y;
-
-        if (pos.includes('left')) x = padding;
-        else if (pos.includes('center')) x = (w - totalWidth) / 2;
-        else x = w - totalWidth - padding;
-
-        if (pos.includes('top')) y = padding + fontSize;
-        else y = h - padding;
-
-        if (showText) {
-          ctx.fillText(titleText, x, y);
-        }
-
-        if (showLogo) {
-          const logoX = x + metrics.width + (showText ? logoGap : 0);
-          const logoY = y - logoHeight + logoBaselineOffset;
-          const scale = logoHeight / 25;
-          ctx.save();
-          ctx.translate(logoX, logoY);
-          ctx.scale(scale, scale);
-          ctx.fillRect(0, 8.89844, 28.2656, 6.80469);
-          ctx.fillRect(35.0703, 0, 31.9297, 7.32812);
-          ctx.fillRect(35.0703, 16.75, 31.9297, 7.32812);
-          ctx.beginPath();
-          ctx.moveTo(35.0703, 0);
-          ctx.lineTo(35.0703, 24.0781);
-          ctx.lineTo(33.2656, 24.0781);
-          ctx.bezierCurveTo(30.5042, 24.0781, 28.2656, 21.8395, 28.2656, 19.0781);
-          ctx.lineTo(28.2656, 5);
-          ctx.bezierCurveTo(28.2656, 2.23858, 30.5042, 0, 33.2656, 0);
-          ctx.closePath();
-          ctx.fill();
-          ctx.restore();
-        }
-        finalCanvas = outCanvas;
-      }
-
-      report(88, 'Encoding PNG...');
+      report(88, t('exportProgress.encoding', 'Encoding PNG...'));
       const blob = await new Promise((resolve) => finalCanvas.toBlob(resolve, 'image/png'));
       if (!blob) throw new Error('Canvas may be too large for this resolution');
 
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      const exportFilename = exportPngOptions?.filename || file?.id || 'timeline';
-      link.download = `${exportFilename}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const exportFilename = opts.filename || file?.id || 'timeline';
+      const saved = await saveExportFile(blob, `${exportFilename}.png`, { filterName: 'PNG Image', extension: 'png' });
+      if (saved?.canceled) {
+        onExportComplete?.({ canceled: true });
+        return;
+      }
+      if (!saved?.success) throw new Error(saved?.error || 'Could not save the file');
 
-      report(100, 'Saved');
+      report(100, t('exportProgress.saved', 'Saved'));
       onExportComplete?.({ success: true });
     } catch (error) {
       console.error('Error generating PNG:', error);
       onExportComplete?.({ success: false, error: error.message });
     } finally {
       if (stopCreep) stopCreep();
-      if (overridesBg) root.style.setProperty('--app-bg', originalPrimaryBg);
-      timelineEl.style.transform = currentTransform;
-      timelineEl.style.transformOrigin = currentTransformOrigin;
     }
   };
 
@@ -3374,54 +3388,37 @@ const TimelineView = forwardRef(function TimelineView({
         options?.background,
       );
     },
+    // Full-timeline render at a chosen scale (capped by canvas limits) for video export
+    renderExportCanvas: (options) => renderTimelineCanvasRef.current(options),
+    getDetailLevel: () => detailOverrideRef.current ?? committedDetailRef.current,
+    // Temporary horizontal scale (the Ctrl+Shift+scroll detail level) for exports; never saved.
+    // null restores the timeline's own level. Resolves once the re-laid-out timeline has painted.
+    setExportDetailLevel: (level) => {
+      clearTimeout(detailCommitTimerRef.current);
+      detailAnchorRef.current = null;
+      detailOverrideRef.current = level == null ? null : clamp(level, DETAIL_MIN, DETAIL_MAX);
+      setDetailOverride(detailOverrideRef.current);
+      return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    },
     generatePreview: async (options) => {
       const timelineEl = timelineRef.current;
       if (!timelineEl) return null;
 
       try {
-        const html2canvas = (await import('html2canvas')).default;
-
         const elWidth = timelineEl.scrollWidth;
         const elHeight = calculatedHeight + 100;
-        const originalPrimaryBg = getComputedStyle(document.documentElement)
-          .getPropertyValue('--app-bg')
-          .trim();
-
-        // Clamp scale so canvas pixel dimensions stay within browser limits
-        const MAX_CANVAS_DIM = 16384;
         const maxPreviewWidth = Number(options?.maxWidth);
         const maxPreviewHeight = Number(options?.maxHeight);
-        const previewScale = Math.min(
-          1,
-          MAX_CANVAS_DIM / elWidth,
-          MAX_CANVAS_DIM / elHeight,
-          Number.isFinite(maxPreviewWidth) ? maxPreviewWidth / elWidth : 1,
-          Number.isFinite(maxPreviewHeight) ? maxPreviewHeight / elHeight : 1,
-        );
-
-        const previewBgColor = options?.transparentBg
-          ? null
-          : (options?.customBg || originalPrimaryBg);
-
-        const canvas = await html2canvas(timelineEl, {
-          backgroundColor: previewBgColor,
-          scale: previewScale,
-          logging: false,
-          width: elWidth,
-          height: elHeight,
-          windowWidth: elWidth,
-          windowHeight: elHeight,
-          onclone: (clonedDocument, clonedTimeline) => {
-            clonedTimeline.style.transform = 'none';
-            clonedTimeline.style.transformOrigin = '';
-            if (options?.transparentBg) {
-              clonedDocument.documentElement.style.setProperty('--app-bg', 'transparent');
-            } else if (options?.customBg) {
-              clonedDocument.documentElement.style.setProperty('--app-bg', options.customBg);
-            }
-            normalizeHtml2CanvasColors(clonedDocument, clonedTimeline);
-          },
+        const { canvas } = await renderTimelineCanvasRef.current({
+          scale: Math.min(
+            1,
+            Number.isFinite(maxPreviewWidth) ? maxPreviewWidth / elWidth : 1,
+            Number.isFinite(maxPreviewHeight) ? maxPreviewHeight / elHeight : 1,
+          ),
+          transparentBg: options?.transparentBg,
+          customBg: options?.customBg,
         });
+        rememberPreviewForScanRef.current(canvas, elWidth, elHeight);
 
         const minYear = file?.start ?? 0;
         const maxYear = file?.end ?? 2024;
@@ -3435,6 +3432,9 @@ const TimelineView = forwardRef(function TimelineView({
           canvasHeight: canvas.height,
           elementWidth: elWidth,
           elementHeight: elHeight,
+          // { top, bottom } in element px for a range given in percent of the width
+          contentBounds: (startPercent, endPercent) =>
+            measureContentBoundsRef.current((startPercent / 100) * elWidth, (endPercent / 100) * elWidth),
           timelineWidth,
           minYear,
           maxYear,
@@ -4766,7 +4766,7 @@ const TimelineView = forwardRef(function TimelineView({
 
           <button
             className="context-menu-item"
-            onClick={() => handleMenuAction(handleDownloadJSON)}
+            onClick={() => handleMenuAction(() => onDownloadJson?.())}
           >
             <FileJson size={16} />
             <span>{t("contextMenu.downloadJson", "Download .json")}</span>

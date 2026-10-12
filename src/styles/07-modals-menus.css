@@ -1353,14 +1353,10 @@
   max-width: 100%;
   max-height: 368px;
   border-radius: 4px;
-  cursor: grab;
   user-select: none;
   overflow: hidden;
 }
 
-.export-preview-wrapper.is-dragging {
-  cursor: grabbing;
-}
 
 .export-preview-image {
   display: block;
