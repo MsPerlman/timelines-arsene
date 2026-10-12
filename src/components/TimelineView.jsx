@@ -2349,7 +2349,7 @@ const TimelineView = forwardRef(function TimelineView({
       </div>
       <div className="fm-tags-header">
         <span className="fm-tags-title">{t("filters.labels.tags", "TAGS")}</span>
-        <span className="fm-tags-subtitle">{t("filters.labels.tagsHint", "CLICK TO FILTER · SHIFT TO QUERY")}</span>
+        <span className="fm-tags-subtitle">{t("filters.labels.tagsHint", "CLICK TO FILTER · SHIFT+CLICK TO QUERY")}</span>
         <span className="fm-tags-count">{t("filters.tagCount", { count: allTags.length, defaultValue_one: "{{count}} tag", defaultValue_other: "{{count}} tags" })}</span>
       </div>
       <div className="filter-menu-dropdown">

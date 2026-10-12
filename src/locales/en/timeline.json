@@ -117,7 +117,7 @@
       "date": "DATE",
       "query": "QUERY",
       "tags": "TAGS",
-      "tagsHint": "CLICK TO FILTER · SHIFT TO QUERY",
+      "tagsHint": "CLICK TO FILTER · SHIFT+CLICK TO QUERY",
       "type": "TYPE"
     },
     "noActiveFilter": "No active filter",
