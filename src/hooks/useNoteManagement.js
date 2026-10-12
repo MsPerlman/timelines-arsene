@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { renderNoteMarkdown } from "../utils/noteUtils";
+import { renderNoteMarkdown, sanitizeNoteHtml } from "../utils/noteUtils";
 import { createNote, addExistingNote, readNote, writeNote, deleteNote, getNotesBaseDir, getAssetsBaseDir, pickAndImportImage, importImageFromPath } from "../utils/electronApi";
 import { isSafeNoteRef } from "../utils/validation";
 import { getStorageId } from "../utils/idUtils";
@@ -109,6 +109,14 @@ export function useNoteManagement({ selectedElement, timelineData, formData, set
     () => renderNoteMarkdown(noteInitialContent, isNoteLoading, noteFileBaseUrl, notesBasePath, assetsBasePath, assetsTimelineDir, resolvePackageAssetSrc),
     [noteInitialContent, isNoteLoading, noteFileBaseUrl, notesBasePath, assetsBasePath, assetsTimelineDir]
   );
+
+  // Same image src resolution as the rendered note, for the editor; null when the src isn't allowed
+  const resolveNoteImageSrc = useCallback((src) => {
+    const escaped = String(src).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    const html = sanitizeNoteHtml(`<img src="${escaped}">`, noteFileBaseUrl, notesBasePath, assetsBasePath, assetsTimelineDir, resolvePackageAssetSrc);
+    const img = new DOMParser().parseFromString(html, "text/html").querySelector("img");
+    return img?.getAttribute("src") || null;
+  }, [noteFileBaseUrl, notesBasePath, assetsBasePath, assetsTimelineDir]);
 
   const noteViewCallbackRef = useCallback((node) => {
     noteRenderRef.current = node;
@@ -234,6 +242,7 @@ export function useNoteManagement({ selectedElement, timelineData, formData, set
     handleDeleteNote,
     handleUnlinkNote,
     handlePickLocalImage,
+    resolveNoteImageSrc,
     handlePickThumbnail,
     handleDropThumbnail,
   };

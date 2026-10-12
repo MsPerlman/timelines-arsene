@@ -461,7 +461,8 @@ function App() {
     function handleKeyDown(e) {
       if (!selectedId) return;
       const target = e.target;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      // The note editor is contenteditable, not an input; Backspace there edits the note
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
       const deleteBind = keybinds.delete;
       const altDeleteBind = { keys: ["Backspace"] };
       if (!matchesKeybind(e, deleteBind) && !matchesKeybind(e, altDeleteBind)) return;

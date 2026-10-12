@@ -1729,30 +1729,6 @@
   flex-shrink: 0;
 }
 
-/* Grows with the note so the panel is the only scroller */
-.note-textarea {
-  field-sizing: content;
-  min-height: 180px;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  border: 1px solid var(--accent-color);
-  border-radius: 0 0 6px 6px;
-  font-size: var(--text-sm);
-  font-family: inherit;
-  background-color: color-mix(in srgb, var(--surface), var(--accent-color) 40%);
-  color: var(--text-primary);
-  resize: none;
-  flex: 1 0 auto;
-  outline: none;
-  transition: background 0.12s ease;
-}
-
-.note-textarea:focus {
-  background-color: var(--surface);
-  border-color: var(--ui-muted);
-}
-
 .note-editor-card .note-toolbar {
   background: transparent;
   border: none;
@@ -1763,38 +1739,6 @@
   padding-right: 0;
 }
 
-
-.note-editor-card .note-textarea {
-  background-color: transparent;
-  border: none;
-  border-radius: 0 0 9px 9px;
-  margin-left: -12px;
-  margin-right: -12px;
-  margin-bottom: -10px;
-  padding-left: 12px;
-  padding-right: 12px;
-  padding-bottom: 10px;
-  width: calc(100% + 24px);
-  box-sizing: border-box;
-}
-
-.note-editor-card .note-textarea:focus {
-  background-color: var(--surface);
-  border-color: transparent;
-}
-
-.note-textarea::-webkit-scrollbar {
-  width: 6px;
-}
-
-.note-textarea::-webkit-scrollbar-thumb {
-  background-color: var(--accent-color);
-  border-radius: 3px;
-}
-
-.note-textarea::-webkit-scrollbar-track {
-  background: transparent;
-}
 
 .note-form-group {
   flex: 1;
@@ -3157,3 +3101,206 @@
   pointer-events: none;
 }
 
+
+/* ── Note editor (CodeMirror) ──────────────────────────────────────── */
+
+.note-editor-header-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.note-mode-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--accent-color);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.note-mode-btn {
+  padding: 1px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  color: var(--ui-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.note-mode-btn:hover {
+  color: var(--text-primary);
+}
+
+.note-mode-btn.is-active {
+  background: var(--accent-color);
+  color: var(--text-primary);
+}
+
+/* The editor grows with the note so the panel is the only scroller */
+.note-cm {
+  flex: 1 0 auto;
+  min-height: 180px;
+  margin: 0 -12px -10px;
+  border-radius: 0 0 9px 9px;
+  transition: background 0.12s ease;
+}
+
+.note-cm:focus-within {
+  background: var(--surface);
+}
+
+.note-cm .cm-editor {
+  min-height: 180px;
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.note-cm .cm-editor.cm-focused {
+  outline: none;
+}
+
+.note-cm .cm-scroller {
+  font-family: inherit;
+  line-height: 1.65;
+}
+
+.note-cm .cm-content {
+  padding: 8px 12px 12px;
+  caret-color: var(--text-primary);
+}
+
+.note-cm .cm-line {
+  padding: 0;
+}
+
+.note-cm .cm-cursor {
+  border-left-color: var(--text-primary);
+}
+
+.note-cm .cm-selectionBackground,
+.note-cm .cm-focused .cm-selectionBackground {
+  background: color-mix(in srgb, var(--link-color), transparent 75%) !important;
+}
+
+.note-cm .cm-placeholder {
+  color: var(--ui-muted);
+}
+
+/* Live Preview: matches the rendered note (.note-render) */
+.note-cm .cm-lp-h1,
+.note-cm .cm-lp-h2,
+.note-cm .cm-lp-h3,
+.note-cm .cm-lp-h4,
+.note-cm .cm-lp-h5,
+.note-cm .cm-lp-h6 {
+  font-weight: 700;
+  padding-top: 0.5rem;
+}
+
+.note-cm .cm-lp-h1 { font-size: var(--text-lg); }
+.note-cm .cm-lp-h2 { font-size: var(--text-base); }
+.note-cm .cm-lp-h3 { font-size: var(--text-sm); }
+
+.note-cm .cm-lp-strong { font-weight: 700; }
+.note-cm .cm-lp-em { font-style: italic; }
+.note-cm .cm-lp-strike { text-decoration: line-through; }
+
+.note-cm .cm-lp-u {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.note-cm .cm-lp-mark {
+  background: var(--highlight-color, color-mix(in srgb, #f6d66a, white 35%));
+  border-radius: 3px;
+}
+
+.note-cm .cm-lp-code {
+  font-family: monospace;
+  background: var(--accent-color);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.note-cm .cm-lp-link {
+  color: var(--link-color);
+  text-decoration: underline;
+  cursor: text;
+}
+
+/* [[wikilinks]] aren't followed yet */
+.note-cm .cm-lp-wikilink,
+.note-render .note-wikilink {
+  color: color-mix(in srgb, var(--link-color), var(--ui-muted) 50%);
+}
+
+.note-cm .cm-lp-quote {
+  border-left: 3px solid var(--link-color);
+  padding-left: 0.75rem !important;
+  background: color-mix(in srgb, var(--link-color), transparent 90%);
+  color: var(--text-secondary, color-mix(in srgb, var(--text-primary), transparent 30%));
+}
+
+.note-cm .cm-lp-hr {
+  background-image: linear-gradient(var(--accent-color), var(--accent-color));
+  background-size: 100% 1px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.note-cm .cm-lp-codeblock,
+.note-cm .cm-lp-table,
+.note-cm .cm-lp-frontmatter {
+  font-family: monospace;
+  font-size: var(--text-xs);
+}
+
+.note-cm .cm-lp-codeblock {
+  background: color-mix(in srgb, var(--accent-color), transparent 50%);
+}
+
+.note-cm .cm-lp-frontmatter {
+  color: var(--ui-muted);
+}
+
+.note-cm .cm-lp-bullet {
+  display: inline-block;
+  width: 0.8em;
+  color: var(--ui-muted);
+}
+
+.note-cm .cm-lp-task {
+  margin: 0 6px 0 0;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.note-cm .cm-lp-task-done {
+  color: var(--ui-muted);
+}
+
+/* Not display: block; CodeMirror's zero-width cursor markers beside a block widget each get an empty line */
+.note-cm .cm-lp-image {
+  display: inline-block;
+  vertical-align: bottom;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 2px 0;
+  border-radius: 6px;
+}
+
+.note-cm .cm-lp-embed {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--accent-color);
+  border-radius: 6px;
+  font-size: var(--text-xs);
+  color: var(--ui-muted);
+}

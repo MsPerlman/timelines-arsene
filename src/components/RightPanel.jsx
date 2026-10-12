@@ -141,6 +141,7 @@ export default function RightPanel({
     handleDeleteNote,
     handleUnlinkNote,
     handlePickLocalImage,
+    resolveNoteImageSrc,
     handlePickThumbnail,
     handleDropThumbnail,
   } = useNoteManagement({ selectedElement, timelineData, formData, setFormData, onUpdate });
@@ -1032,6 +1033,11 @@ export default function RightPanel({
 
   const showLegacyBreaks = timelineData?.file?.allowLegacyBreaks === true;
   const approxMarker = (timelineData?.file?.approxID || "").trim() || DEFAULT_APPROX_LABEL;
+  const noteWordCountLabel = t("noteEditor.wordCount", {
+    count: noteWordCount,
+    defaultValue_one: "{{count}} word",
+    defaultValue_other: "{{count}} words",
+  });
 
   // Enter in a plain field jumps to the next one (name → date → …); Shift+Enter keeps a newline in the name
   const handleEnterToNext = (e) => {
@@ -1394,7 +1400,7 @@ export default function RightPanel({
                 <button type="button" className="rp-note-header sources-collapse-btn" onClick={() => setIsNoteCollapsed(v => !v)}>
                   <span className="rp-note-label rp-note-label-note">{t("noteEditor.label", "Note")}</span>
                   <span className="sources-collapse-right">
-                    {noteWordCount > 0 && <span className="rp-note-meta">markdown · {noteWordCount} words</span>}
+                    {noteWordCount > 0 && <span className="rp-note-meta">{noteWordCountLabel}</span>}
                     <ChevronDown size={14} style={{transform: isNoteCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s ease', color: 'var(--ui-muted)'}} />
                   </span>
                 </button>
@@ -2702,12 +2708,6 @@ export default function RightPanel({
               )}
               {formData.noteFile && (
                 <div className="note-editor-card">
-                  <div className="rp-note-header">
-                    <span className="rp-note-label rp-note-label-note">{t("noteEditor.label", "Note")}</span>
-                    {noteWordCount > 0 && (
-                      <span className="rp-note-meta">markdown · {noteWordCount} words</span>
-                    )}
-                  </div>
                   <NoteEditor
                     ref={noteEditorRef}
                     key={`${selectedElement?.id}-${formData?.noteFile}`}
@@ -2718,6 +2718,9 @@ export default function RightPanel({
                     onUnlink={handleUnlinkNote}
                     onDelete={handleDeleteNote}
                     onPickLocalImage={handlePickLocalImage}
+                    resolveImageSrc={resolveNoteImageSrc}
+                    label={<span className="rp-note-label rp-note-label-note">{t("noteEditor.label", "Note")}</span>}
+                    meta={noteWordCount > 0 ? noteWordCountLabel : null}
                   />
                 </div>
               )}

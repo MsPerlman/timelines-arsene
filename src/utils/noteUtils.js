@@ -1,4 +1,4 @@
-import { marked } from "marked";
+import { marked, Marked } from "marked";
 import DOMPurify from "dompurify";
 
 // resolveLocalSrc: optional (src) => url hook so environments without
@@ -160,6 +160,29 @@ export function sanitizeNoteHtml(html, baseUrl = "", basePath = "", assetsBasePa
   return doc.body.innerHTML;
 }
 
+const escapeHtml = (value) => String(value)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+// [[wikilinks]] / ![[embeds]] as muted text (not followed yet); a marked extension so code is left alone
+const wikiLinkExtension = {
+  name: "wikiLink",
+  level: "inline",
+  start(src) {
+    const i = src.indexOf("[[");
+    if (i < 0) return undefined;
+    return i > 0 && src[i - 1] === "!" ? i - 1 : i;
+  },
+  tokenizer(src) {
+    const match = /^!?\[\[([^[\]\n|]+?)(?:\|([^[\]\n]+?))?\]\]/.exec(src);
+    if (!match) return undefined;
+    return { type: "wikiLink", raw: match[0], target: match[1].trim(), alias: match[2]?.trim() };
+  },
+  renderer(token) {
+    return `<span class="note-wikilink" title="${escapeHtml(token.target)}">${escapeHtml(token.alias || token.target)}</span>`;
+  },
+};
+const noteMarked = new Marked({ extensions: [wikiLinkExtension] });
+
 export function renderNoteMarkdown(content, isLoading, baseUrl = "", basePath = "", assetsBasePath = "", assetsTimelineDir = "", resolveLocalSrc = null) {
   const raw = isLoading ? "_Loading note..._" : content || "";
 
@@ -213,6 +236,6 @@ export function renderNoteMarkdown(content, isLoading, baseUrl = "", basePath = 
     return originalImage(href, title, text);
   };
 
-  const html = marked.parse(withHighlight, { renderer });
+  const html = noteMarked.parse(withHighlight, { renderer });
   return sanitizeNoteHtml(frontmatterHtml + html, baseUrl, basePath, assetsBasePath, assetsTimelineDir, resolveLocalSrc);
 }

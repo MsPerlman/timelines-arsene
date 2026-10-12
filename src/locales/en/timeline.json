@@ -182,10 +182,19 @@
     "label": "Note",
     "link": "Link",
     "loading": "Loading note...",
+    "mode": {
+      "label": "Editor mode",
+      "live": "Live",
+      "liveHint": "Formatting shown as it renders; markdown appears where you're editing",
+      "source": "Source",
+      "sourceHint": "Plain markdown"
+    },
     "placeholder": "Write your note...",
     "strikethrough": "Strikethrough",
     "underline": "Underline",
-    "unlink": "Unlink Note"
+    "unlink": "Unlink Note",
+    "wordCount_one": "{{count}} word",
+    "wordCount_other": "{{count}} words"
   },
   "openSource": "Open source",
   "options": {
