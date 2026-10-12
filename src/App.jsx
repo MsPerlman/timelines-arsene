@@ -1812,7 +1812,7 @@ function App() {
           uid: generateStorageUid(timelineId),
           type: "timeline",
         title: timelineConfig.title,
-        appVersion: "0.7.0-alpha.2",
+        appVersion: "0.8.0-alpha.1",
         start: timelineConfig.start,
         end: timelineConfig.end,
           detailLevel: timelineConfig.detailLevel,
@@ -2459,7 +2459,7 @@ function App() {
   if (!timelineData) {
     return (
       <>
-        <TopBar title="Timelines" version="v0.7.0-alpha.2" />
+        <TopBar title="Timelines" version="v0.8.0-alpha.1" />
         <div className={`app-shell ${isElectron ? 'with-title-bar' : ''}`}>
           <HomePage
             onSelectTimeline={handleLoadTimeline}
@@ -2886,7 +2886,7 @@ function App() {
               <label className="confirm-checkbox">
                 <input
                   type="checkbox"
-                  checked={deleteElementWithNotes}
+                  checked={deleteElementWithNotes && deleteElementDialog.some((el) => el.noteFile)}
                   disabled={!deleteElementDialog.some((el) => el.noteFile)}
                   onChange={(e) => setDeleteElementWithNotes(e.target.checked)}
                 />
@@ -2899,7 +2899,7 @@ function App() {
               <label className="confirm-checkbox">
                 <input
                   type="checkbox"
-                  checked={deleteElementWithImage}
+                  checked={deleteElementWithImage && deleteElementDialog.some((el) => getLocalThumbnailFilename(el.thumbnail))}
                   disabled={!deleteElementDialog.some((el) => getLocalThumbnailFilename(el.thumbnail))}
                   onChange={(e) => setDeleteElementWithImage(e.target.checked)}
                 />

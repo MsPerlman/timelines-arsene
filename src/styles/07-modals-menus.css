@@ -1489,6 +1489,12 @@
   color: var(--text-primary);
 }
 
+/* Nothing of that kind is attached, so there's nothing to delete */
+.confirm-checkbox:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .settings-subfolder {
   display: flex;
   flex-direction: column;
