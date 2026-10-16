@@ -12,6 +12,13 @@ const DEFAULT_THEME_KEY = 'parchment';
 // Force sRGB color profile to prevent washed-out appearance in screenshots/screenshare on HDR displays
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
 
+// Dev-only test profile; must run before anything reads userData
+if (process.env.NODE_ENV === 'development' && process.env.TIMELINES_PROFILE) {
+  const profileDir = path.join(app.getPath('appData'), `timelines-${process.env.TIMELINES_PROFILE.replace(/[^\w-]/g, '')}`);
+  if (process.env.TIMELINES_PROFILE_RESET === '1') fsSync.rmSync(profileDir, { recursive: true, force: true });
+  app.setPath('userData', profileDir);
+}
+
 // Must run before app.ready
 try {
   const settingsPath = path.join(app.getPath('userData'), 'app-settings.json');
@@ -1650,7 +1657,7 @@ const ALLOWED_SETTINGS_KEYS = new Set([
   'theme', 'notesSubfolder', 'notesSubfolderEnabled',
   'appFontFamily', 'appFontSize', 'keybinds', 'hardwareAcceleration', 'startMaximized', 'disableThumbnails', 'assetsStorageDir', 'homeSortMode', 'homeViewMode', 'homeSidebarWidth',
   'gitSyncAutoSync', 'gitSyncIntervalMinutes', 'gitSyncMachineLabel',
-  'language', 'favoriteColors',
+  'language', 'favoriteColors', 'storageLocationChosen',
 ]);
 
 ipcMain.handle('set-app-settings', async (event, settings) => {

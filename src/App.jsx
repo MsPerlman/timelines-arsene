@@ -16,6 +16,7 @@ import SearchOverlay from "./components/SearchOverlay";
 import {
   saveTimelineToFile,
   chooseTimelinesDir,
+  listTimelines,
   chooseNotesDir,
   chooseAssetsDir,
   openAssetsFolder,
@@ -266,6 +267,7 @@ function App() {
   const [importConflict, setImportConflict] = useState(null); // { title, sourcePath }
   const [skippedFilesNotice, setSkippedFilesNotice] = useState(null); // { title, message, files }
   const [timelinesMoveDialog, setTimelinesMoveDialog] = useState(null); // { from, to, count, nested, nextDir, isMoving }
+  const [storagePrompt, setStoragePrompt] = useState(null);
   const [isExportPngModalOpen, setIsExportPngModalOpen] = useState(false);
   const [exportPngOptions, setExportPngOptions] = useState(null);
   const [exportPngProgress, setExportPngProgress] = useState(null); // { percent, stage }
@@ -2344,6 +2346,90 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    if (!window.electron) return undefined;
+    let cancelled = false;
+    (async () => {
+      const settings = await getAppSettings();
+      if (settings?.storageLocationChosen || (settings?.timelineStorageDir ?? settings?.storageDir)) return;
+      const existing = await listTimelines();
+      if (Array.isArray(existing) && existing.length > 0) {
+        saveAppSettings({ storageLocationChosen: true });
+        return;
+      }
+      const preview = await window.electron.previewTimelinesFolderChange?.({ nextDir: "" });
+      if (!cancelled) setStoragePrompt({ defaultPath: preview?.to || "" });
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleStorageUseDefault = () => {
+    setStoragePrompt(null);
+    saveAppSettings({ storageLocationChosen: true });
+  };
+
+  const handleStorageChooseFolder = async () => {
+    const result = await chooseTimelinesDir();
+    if (!result?.success || !result.path) return;
+    const switched = await switchTimelinesDir(result.path, false);
+    if (!switched?.success) return;
+    setStoragePrompt(null);
+    saveAppSettings({ storageLocationChosen: true });
+  };
+
+  const storagePromptModal = storagePrompt && (
+    <div className={`welcome-screen${isElectron ? " with-title-bar" : ""}`}>
+      <div className="welcome-card">
+        <div className="welcome-brand">
+          <svg className="welcome-logo" viewBox="0 0 67 25" fill="currentColor" aria-hidden="true">
+            <rect y="8.89844" width="28.2656" height="6.80469" />
+            <rect x="35.0703" width="31.9297" height="7.32812" />
+            <rect x="35.0703" y="16.75" width="31.9297" height="7.32812" />
+            <path d="M28.2656 5C28.2656 2.23858 30.5042 0 33.2656 0H35.0703V24.0781H33.2656C30.5042 24.0781 28.2656 21.8395 28.2656 19.0781V5Z" />
+          </svg>
+          <h1 className="welcome-title">{t("app:storagePrompt.welcome", "Welcome to Timelines Studio")}</h1>
+          <p className="welcome-subtitle">{t("app:storagePrompt.subtitle", "Your timelines are saved automatically as files on your computer. Choose where they go.")}</p>
+        </div>
+
+        <div className="welcome-options">
+          <div className="welcome-option" title={storagePrompt.defaultPath || undefined}>
+            <div className="welcome-option-text">
+              <div className="welcome-option-title">{t("app:storagePrompt.defaultTitle", "Use the default folder")}</div>
+              <div className="welcome-option-description">{t("app:storagePrompt.defaultDescription", "Kept in the app's data folder. A good choice if you're just trying things out.")}</div>
+            </div>
+            <button className="settings-folder-button confirm-primary-button welcome-option-button" onClick={handleStorageUseDefault}>
+              {t("app:storagePrompt.useDefault", "Use Default")}
+            </button>
+          </div>
+          <div className="welcome-option">
+            <div className="welcome-option-text">
+              <div className="welcome-option-title">{t("app:storagePrompt.chooseTitle", "Choose a folder")}</div>
+              <div className="welcome-option-description">{t("app:storagePrompt.chooseDescription", "Pick a folder in Documents, or one you already back up.")}</div>
+            </div>
+            <button className="settings-folder-button welcome-option-button" onClick={handleStorageChooseFolder}>
+              {t("app:storagePrompt.choose", "Choose...")}
+            </button>
+          </div>
+        </div>
+
+        <p className="welcome-footnote">
+          {t("app:storagePrompt.changeLater", "You can change this anytime in Settings → Files.")}{" "}
+          <a
+            className="welcome-link"
+            href="https://www.timelines.studio/wiki/Files/"
+            onClick={(e) => {
+              if (!window.electron?.openExternal) return;
+              e.preventDefault();
+              window.electron.openExternal({ url: "https://www.timelines.studio/wiki/Files/" });
+            }}
+          >
+            {t("app:storagePrompt.learnMore", "Learn more")}
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+
   const handlePickTimelinesDir = async () => {
     const result = await chooseTimelinesDir();
     if (result?.success && result.path) {
@@ -2633,6 +2719,7 @@ function App() {
         {importConflictModal}
         {skippedFilesModal}
         {timelinesMoveModal}
+        {storagePromptModal}
       </>
     );
   }

@@ -1962,7 +1962,27 @@ export default function HomePage({
                   </div>
                 )}
 
-                {filteredTimelines.length === 0 && (
+                {allTimelines.length === 0 && !normalizedQuery && !currentFolder && librarySection !== "recent" ? (
+                  <div className="home-empty">
+                    <svg className="home-empty-logo" width="54" height="20" viewBox="0 0 67 25" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <rect y="8.89844" width="29.2656" height="6.80469" fill="currentColor" />
+                      <rect x="34.0703" width="32.9297" height="7.32812" fill="currentColor" />
+                      <rect x="34.0703" y="16.75" width="32.9297" height="7.32812" fill="currentColor" />
+                      <path d="M28.2656 5C28.2656 2.23858 30.5042 0 33.2656 0H35.0703V24.0781H33.2656C30.5042 24.0781 28.2656 21.8395 28.2656 19.0781V5Z" fill="currentColor" />
+                    </svg>
+                    <h2 className="home-empty-title">{t("app:home.empty.title", "No timelines yet")}</h2>
+                    <p className="home-empty-text">
+                      {t("app:home.empty.description", "Create a new timeline, or import a .timeline or .csv file from the sidebar.")}
+                    </p>
+                    <button
+                      type="button"
+                      className="home-empty-link"
+                      onClick={() => window.electron?.openExternal?.({ url: "https://www.timelines.studio/wiki/" })}
+                    >
+                      {t("app:home.empty.guide", "New here? Read the guide")}
+                    </button>
+                  </div>
+                ) : filteredTimelines.length === 0 && (
                   <div className="no-timelines">
                     <p>{emptyTimelineMessage}</p>
                   </div>

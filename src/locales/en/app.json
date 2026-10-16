@@ -205,6 +205,13 @@
     }
   },
   "folderNamePlaceholder": "Folder name",
+  "home": {
+    "empty": {
+      "description": "Create a new timeline, or import a .timeline or .csv file from the sidebar.",
+      "guide": "New here? Read the guide",
+      "title": "No timelines yet"
+    }
+  },
   "import": "Import",
   "importCsv": {
     "columns": {
@@ -391,6 +398,18 @@
     "spans": "Spans"
   },
   "sortSummary": "Sort: {{field}}, {{direction}}",
+  "storagePrompt": {
+    "changeLater": "You can change this anytime in Settings → Files.",
+    "choose": "Choose...",
+    "chooseDescription": "Pick a folder in Documents, or one you already back up.",
+    "chooseTitle": "Choose a folder",
+    "defaultDescription": "Kept in the app's data folder. A good choice if you're just trying things out.",
+    "defaultTitle": "Use the default folder",
+    "learnMore": "Learn more",
+    "subtitle": "Your timelines are saved automatically as files on your computer. Choose where they go.",
+    "useDefault": "Use Default",
+    "welcome": "Welcome to Timelines Studio"
+  },
   "sync": {
     "lastSynced": "last synced {{when}}",
     "notSyncedYet": "Not synced yet",
