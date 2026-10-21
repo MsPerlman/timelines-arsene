@@ -12,7 +12,7 @@
 
 ### Timelines Studio
 
-Organize events, spans, and eras, keep your notes and sources beside them, and watch it all unfold on a map.
+Visualize your Notes.
 
 <br/>
 
