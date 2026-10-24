@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Maximize2, Minimize2, Link, Trash2, ChevronLeft, ChevronRight, ChevronDown, Pencil, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X, Image as ImageIcon, Shapes, MoveVertical, Minus, SquareDashed, CalendarOff, EyeOff, ArrowLeftToLine, ArrowRightToLine, CaseSensitive } from "lucide-react";
+import { Maximize2, Minimize2, Link, Trash2, ChevronLeft, ChevronRight, ChevronDown, Pencil, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X, Image as ImageIcon, Shapes, MoveVertical, Minus, SquareDashed, CalendarOff, EyeOff, ArrowLeftToLine, ArrowRightToLine, CaseSensitive, Plus } from "lucide-react";
 import NoteEditor from "./NoteEditor";
 import WikiSection from "./WikiSection";
 import SourcesSection from "./SourcesSection";
@@ -2034,6 +2034,7 @@ export default function RightPanel({
             {/* font size. blank means "whatever the timeline says", the chillest option */}
             {(isEvent || isSpan) && isPropVisible("fontSize") && (() => {
               const defaultSize = isEvent ? (Number(timelineData?.file?.eventFontSize) || 10) : 11;
+              const currentFontSize = resolveElementFontSize(formData.fontSize) ?? defaultSize;
               const commitFontSize = (raw) => {
                 const next = { ...formData };
                 const size = resolveElementFontSize(raw);
@@ -2048,19 +2049,40 @@ export default function RightPanel({
                   <div className="edit-row">
                     <label htmlFor="fontSize" title={t("rightPanel.fontSizeHint", "In pixels")}>{t("fields.fontSize", "Font Size")}</label>
                     <div className="edit-separator" />
-                    <input
-                      id="fontSize"
-                      type="number"
-                      className="edit-input edit-font-size-input"
-                      min={ELEMENT_FONT_SIZE_MIN}
-                      max={ELEMENT_FONT_SIZE_MAX}
-                      step={1}
-                      value={formData.fontSize ?? ""}
-                      placeholder={String(defaultSize)}
-                      onChange={(e) => handleChange("fontSize", e.target.value === "" ? undefined : Number(e.target.value))}
-                      onBlur={(e) => commitFontSize(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-                    />
+                    {/* our own - / + instead of the os spinner, which ignores the theme */}
+                    <div className="edit-font-size-stepper">
+                      <button
+                        type="button"
+                        className="edit-font-size-step"
+                        aria-label={t("rightPanel.fontSizeSmaller", "Smaller")}
+                        disabled={currentFontSize <= ELEMENT_FONT_SIZE_MIN}
+                        onClick={() => commitFontSize(currentFontSize - 1)}
+                      >
+                        <Minus size={12} strokeWidth={2.25} />
+                      </button>
+                      <input
+                        id="fontSize"
+                        type="number"
+                        className="edit-input edit-font-size-input"
+                        min={ELEMENT_FONT_SIZE_MIN}
+                        max={ELEMENT_FONT_SIZE_MAX}
+                        step={1}
+                        value={formData.fontSize ?? ""}
+                        placeholder={String(defaultSize)}
+                        onChange={(e) => handleChange("fontSize", e.target.value === "" ? undefined : Number(e.target.value))}
+                        onBlur={(e) => commitFontSize(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                      />
+                      <button
+                        type="button"
+                        className="edit-font-size-step"
+                        aria-label={t("rightPanel.fontSizeLarger", "Larger")}
+                        disabled={currentFontSize >= ELEMENT_FONT_SIZE_MAX}
+                        onClick={() => commitFontSize(currentFontSize + 1)}
+                      >
+                        <Plus size={12} strokeWidth={2.25} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

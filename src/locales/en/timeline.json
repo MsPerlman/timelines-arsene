@@ -226,6 +226,8 @@
     },
     "extendFrom": "Extend from",
     "fontSizeHint": "In pixels",
+    "fontSizeLarger": "Larger",
+    "fontSizeSmaller": "Smaller",
     "noContiguousSpans": "No contiguous spans",
     "noMatchingSpans": "No matching spans",
     "noMatchingTimes": "No matching times",
