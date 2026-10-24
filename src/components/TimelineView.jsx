@@ -19,12 +19,32 @@ import { isFontReady, watchFontLoad } from "../utils/fontGate";
 import { parseTimelineInput, snapToMonthGrid, snapToDayGrid, fractionalYearToDate, daysInMonth, todayFractionalYear, displayDateTimeLabel, formatDuration } from "../utils/dateUtils";
 import { withAlpha, blendColors, normalizeColor } from "../utils/colorUtils";
 import { parseFilterQuery, matchesFilter, tokenizeFilterQuery, buildFilterContext, normalizeTag, quoteFilterValue } from "../utils/filterUtils";
-import { FileJson, Image, Video, Settings, Plus, Minus, CopyPlus, Trash2, Edit2, ListFilter, Play, Pause, Tag, Eye, EyeOff, Map as MapIcon, MapPin, GanttChartSquare, Table2, ExternalLink, HelpCircle, Maximize2, X, History, Crosshair, ArrowLeftRight } from "lucide-react";
+import { FileJson, Image, Video, Settings, Plus, Minus, CopyPlus, Trash2, Edit2, ListFilter, Play, Pause, Tag, Eye, EyeOff, Map as MapIcon, MapPin, GanttChartSquare, Table2, ExternalLink, HelpCircle, Maximize2, X, History, Crosshair, ArrowLeftRight, Repeat, SlidersHorizontal } from "lucide-react";
 import { ICON_MAP } from "../config/elementIcons";
 import { drawTitleWatermark, saveExportFile } from "../utils/exportUtils";
 import { DETAIL_MIN, DETAIL_MAX, clamp } from "../utils/sliderUtils";
+import { matchesKeybind } from "../utils/keybinds";
 
 const FILTER_HISTORY_KEY = "timelines-filter-query-history";
+const PLAYBACK_PREFS_KEY = "timelines-playback-prefs";
+const PLAYBACK_BASE_PX_PER_SEC = 220;
+// the speed menu. 0.25x for dramatic slow-mo, 8x for when history is boring
+const PLAYBACK_SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
+
+const readPlaybackPrefs = () => {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(PLAYBACK_PREFS_KEY) ?? "{}");
+    return {
+      speed: PLAYBACK_SPEEDS.includes(stored?.speed) ? stored.speed : 1,
+      reverse: stored?.reverse === true,
+      loop: stored?.loop === true,
+    };
+  } catch {
+    return { speed: 1, reverse: false, loop: false };
+  }
+};
+
+const formatPlaybackSpeed = (speed) => `${speed < 1 ? String(speed).replace(/^0/, "") : speed}×`;
 const FILTER_HISTORY_MAX = 8;
 
 const FONT_FALLBACK_STACK = '"Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
@@ -567,6 +587,13 @@ const TimelineView = forwardRef(function TimelineView({
   const [sliderYearLabel, setSliderYearLabel] = useState("");
   const [currentScale, setCurrentScale] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackPrefs, setPlaybackPrefs] = useState(readPlaybackPrefs);
+  // the animation loop reads this ref so changing speed mid-play doesn't restart the whole show
+  const playbackPrefsRef = useRef(playbackPrefs);
+  playbackPrefsRef.current = playbackPrefs;
+  const [isPlaybackMenuOpen, setIsPlaybackMenuOpen] = useState(false);
+  const playbackMenuRef = useRef(null);
+  const playbackMenuButtonRef = useRef(null);
   const filterMenuRef = useRef(null);
   const filterButtonRef = useRef(null);
   const animationFrameRef = useRef(null);
@@ -3133,9 +3160,59 @@ const TimelineView = forwardRef(function TimelineView({
       if (lastViewportYearRef.current !== null) {
         publishViewportYear(lastViewportYearRef.current);
       }
+    } else {
+      // already parked at the finish line? rewind to the other end so play actually plays something
+      const container = containerRef.current;
+      if (container) {
+        const { minX, maxX, range } = getPanBounds(container);
+        const reverse = playbackPrefsRef.current.reverse;
+        const x = translateRef.current.x;
+        if (range > 0 && (reverse ? x >= maxX - 0.5 : x <= minX + 0.5)) {
+          translateRef.current.x = reverse ? minX : maxX;
+          applyTransform();
+        }
+      }
     }
     setIsPlaying(!isPlaying);
-  }, [isPlaying, publishViewportYear]);
+  }, [isPlaying, publishViewportYear]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updatePlaybackPrefs = useCallback((patch) => {
+    setPlaybackPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      try { window.localStorage.setItem(PLAYBACK_PREFS_KEY, JSON.stringify(next)); } catch { /* storage said no, we move on */ }
+      return next;
+    });
+  }, []);
+
+  const stepPlaybackSpeed = useCallback((delta) => {
+    const index = PLAYBACK_SPEEDS.indexOf(playbackPrefsRef.current.speed);
+    const nextIndex = Math.min(PLAYBACK_SPEEDS.length - 1, Math.max(0, (index === -1 ? 2 : index) + delta));
+    updatePlaybackPrefs({ speed: PLAYBACK_SPEEDS[nextIndex] });
+  }, [updatePlaybackPrefs]);
+
+  const togglePlaybackReverse = useCallback(() => {
+    updatePlaybackPrefs({ reverse: !playbackPrefsRef.current.reverse });
+  }, [updatePlaybackPrefs]);
+
+  const togglePlaybackLoop = useCallback(() => {
+    updatePlaybackPrefs({ loop: !playbackPrefsRef.current.loop });
+  }, [updatePlaybackPrefs]);
+
+  // Close the playback menu when clicking outside or pressing Escape
+  useEffect(() => {
+    if (!isPlaybackMenuOpen) return;
+    const handleClickOutside = (e) => {
+      if (playbackMenuRef.current?.contains(e.target) || playbackMenuButtonRef.current?.contains(e.target)) return;
+      setIsPlaybackMenuOpen(false);
+    };
+    const handleKeyDown = (e) => { if (e.key === "Escape") setIsPlaybackMenuOpen(false); };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isPlaybackMenuOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -3160,6 +3237,28 @@ const TimelineView = forwardRef(function TimelineView({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handlePlayPause, keybinds]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const target = e.target;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return;
+      if (matchesKeybind(e, keybinds.playReverse)) {
+        e.preventDefault();
+        togglePlaybackReverse();
+      } else if (matchesKeybind(e, keybinds.playSlower)) {
+        e.preventDefault();
+        stepPlaybackSpeed(-1);
+      } else if (matchesKeybind(e, keybinds.playFaster)) {
+        e.preventDefault();
+        stepPlaybackSpeed(1);
+      } else if (matchesKeybind(e, keybinds.playLoop)) {
+        e.preventDefault();
+        togglePlaybackLoop();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [keybinds, togglePlaybackReverse, stepPlaybackSpeed, togglePlaybackLoop]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -3263,10 +3362,11 @@ const TimelineView = forwardRef(function TimelineView({
       const deltaMs = time - lastPlayTimeRef.current;
       lastPlayTimeRef.current = time;
 
-      const speedPxPerSec = 220;
-      const deltaPx = (speedPxPerSec * deltaMs) / 1000;
+      const { speed, reverse } = playbackPrefsRef.current;
+      const deltaPx = (PLAYBACK_BASE_PX_PER_SEC * speed * deltaMs) / 1000;
 
-      let nextX = translateRef.current.x - deltaPx;
+      // reverse just means walking backwards through time. very doable, ask any historian
+      let nextX = translateRef.current.x + (reverse ? deltaPx : -deltaPx);
       nextX = Math.min(maxX, Math.max(minX, nextX));
       translateRef.current.x = nextX;
       applyTransform();
@@ -3317,7 +3417,14 @@ const TimelineView = forwardRef(function TimelineView({
         setMapViewportYear((current) => (current === snappedYear ? current : snappedYear));
       }
 
-      if (nextX <= minX + 0.5) {
+      if (reverse ? nextX >= maxX - 0.5 : nextX <= minX + 0.5) {
+        if (playbackPrefsRef.current.loop) {
+          // hit the end with loop on, back to the start for another lap
+          translateRef.current.x = reverse ? minX : maxX;
+          applyTransform();
+          animationFrameRef.current = requestAnimationFrame(animate);
+          return;
+        }
         // Sync React state when animation ends
         setSliderValue(clampedPercentage);
         setSliderYearLabel(nextLabel);
@@ -4940,15 +5047,77 @@ const TimelineView = forwardRef(function TimelineView({
         <button
           className="slider-play-button"
           onClick={handlePlayPause}
-          aria-label={isPlaying ? "Pause" : "Play"}
-          data-tooltip={btnTip(isPlaying ? "Pause" : "Play", keybinds.play)}
+          aria-label={isPlaying ? "Pause" : playbackPrefs.reverse ? t("playback.playReverse", "Play in reverse") : "Play"}
+          data-tooltip={btnTip(isPlaying ? "Pause" : playbackPrefs.reverse ? t("playback.playReverse", "Play in reverse") : "Play", keybinds.play)}
         >
           {isPlaying ? (
             <Pause size={16} strokeWidth={2} />
           ) : (
-            <Play size={16} strokeWidth={2} />
+            // the triangle points the way time will go
+            <Play size={16} strokeWidth={2} style={playbackPrefs.reverse ? { transform: "scaleX(-1)" } : undefined} />
           )}
         </button>
+        <div className="slider-playback-options">
+          <button
+            ref={playbackMenuButtonRef}
+            type="button"
+            className={`slider-play-button slider-options-button${isPlaybackMenuOpen ? " is-open" : ""}`}
+            onClick={() => setIsPlaybackMenuOpen((open) => !open)}
+            aria-label={t("playback.options", "Playback options")}
+            aria-haspopup="true"
+            aria-expanded={isPlaybackMenuOpen}
+            data-tooltip={isPlaybackMenuOpen ? undefined : t("playback.options", "Playback options")}
+          >
+            <SlidersHorizontal size={15} strokeWidth={2} />
+            {/* a dot when speed or loop is off its default, so a changed setting never goes unnoticed */}
+            {(playbackPrefs.speed !== 1 || playbackPrefs.loop) && <span className="slider-options-dot" aria-hidden="true" />}
+          </button>
+          {isPlaybackMenuOpen && (
+            <div ref={playbackMenuRef} className="playback-menu" role="group" aria-label={t("playback.options", "Playback options")}>
+              {/* shortcuts live in the hover titles so the panel stays clean */}
+              <span className="playback-menu-label">{t("playback.direction", "Direction")}</span>
+              <div className="playback-menu-segment" title={btnTip(t("playback.switchDirection", "Switch direction"), keybinds.playReverse)}>
+                <button type="button" className={!playbackPrefs.reverse ? "is-active" : ""} aria-pressed={!playbackPrefs.reverse} onClick={() => updatePlaybackPrefs({ reverse: false })}>
+                  <Play size={11} strokeWidth={2.25} />
+                  {t("playback.forward", "Forward")}
+                </button>
+                <button type="button" className={playbackPrefs.reverse ? "is-active" : ""} aria-pressed={playbackPrefs.reverse} onClick={() => updatePlaybackPrefs({ reverse: true })}>
+                  <Play size={11} strokeWidth={2.25} style={{ transform: "scaleX(-1)" }} />
+                  {t("playback.reverse", "Reverse")}
+                </button>
+              </div>
+              <span className="playback-menu-label">{t("playback.speed", "Speed")}</span>
+              <div
+                className="playback-menu-segment"
+                title={`${btnTip(t("playback.slower", "Slower"), keybinds.playSlower)} · ${btnTip(t("playback.faster", "Faster"), keybinds.playFaster)}`}
+              >
+                {PLAYBACK_SPEEDS.map((speed) => (
+                  <button
+                    key={speed}
+                    type="button"
+                    className={playbackPrefs.speed === speed ? "is-active" : ""}
+                    aria-pressed={playbackPrefs.speed === speed}
+                    onClick={() => updatePlaybackPrefs({ speed })}
+                  >
+                    {formatPlaybackSpeed(speed)}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={`playback-menu-toggle${playbackPrefs.loop ? " is-active" : ""}`}
+                role="switch"
+                aria-checked={playbackPrefs.loop}
+                title={btnTip(t("playback.loop", "Loop"), keybinds.playLoop)}
+                onClick={togglePlaybackLoop}
+              >
+                <Repeat size={12} strokeWidth={2.25} />
+                <span className="playback-menu-label">{t("playback.loop", "Loop")}</span>
+                <span className="playback-menu-switch" aria-hidden="true" />
+              </button>
+            </div>
+          )}
+        </div>
         <div className="slider-track">
           <input
             ref={sliderElementRef}

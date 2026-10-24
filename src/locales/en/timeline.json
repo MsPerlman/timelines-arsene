@@ -200,6 +200,18 @@
   "options": {
     "inherit": "Inherit"
   },
+  "playback": {
+    "direction": "Direction",
+    "faster": "Faster",
+    "forward": "Forward",
+    "loop": "Loop",
+    "options": "Playback options",
+    "playReverse": "Play in reverse",
+    "reverse": "Reverse",
+    "slower": "Slower",
+    "speed": "Speed",
+    "switchDirection": "Switch direction"
+  },
   "rightPanel": {
     "addProperty": "Add property",
     "approxToggleHint": "prefixes the displayed date with \"{{marker}}\"",
