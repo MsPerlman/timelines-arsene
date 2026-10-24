@@ -3304,3 +3304,74 @@
   font-size: var(--text-xs);
   color: var(--ui-muted);
 }
+
+/* one box the same size as the dropdowns around it (.edit-select), with - / + inside */
+.edit-font-size-stepper {
+  grid-column: 2;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 175px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 2px;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--accent-color);
+  border-radius: 6px;
+}
+
+.edit-font-size-stepper:hover,
+.edit-font-size-stepper:focus-within {
+  border-color: var(--ui-muted);
+}
+
+.edit-font-size-stepper .edit-font-size-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  background: transparent;
+  border-bottom: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.edit-font-size-stepper .edit-font-size-input:focus {
+  background: transparent !important;
+}
+
+.edit-font-size-input::-webkit-inner-spin-button,
+.edit-font-size-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.edit-font-size-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.edit-font-size-step:hover:not(:disabled) {
+  background: var(--accent-color);
+  color: var(--text-primary);
+}
+
+.edit-font-size-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
