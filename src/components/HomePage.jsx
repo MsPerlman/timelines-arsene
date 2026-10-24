@@ -362,6 +362,7 @@ export default function HomePage({
     playReverse: t("hotkeys.playReverse", "Reverse Playback"),
     playSlower: t("hotkeys.playSlower", "Playback Slower"),
     playFaster: t("hotkeys.playFaster", "Playback Faster"),
+    playLoop: t("hotkeys.playLoop", "Loop Playback"),
   }), [t]);
   // Empty string means "follow the system", which is the stored absence of a language key.
   const [language, setLanguage] = useState("");

@@ -201,12 +201,16 @@
     "inherit": "Inherit"
   },
   "playback": {
-    "playForward": "Play forward",
+    "direction": "Direction",
+    "faster": "Faster",
+    "forward": "Forward",
+    "loop": "Loop",
+    "options": "Playback options",
     "playReverse": "Play in reverse",
     "reverse": "Reverse",
-    "reverseOn": "Reverse (on)",
-    "speedHint": "Speed (click faster, right-click slower)",
-    "speedLabel": "Playback speed {{speed}}"
+    "slower": "Slower",
+    "speed": "Speed",
+    "switchDirection": "Switch direction"
   },
   "rightPanel": {
     "addProperty": "Add property",

@@ -262,6 +262,7 @@
     "newSpan": "New Span",
     "play": "Play / Pause",
     "playFaster": "Playback Faster",
+    "playLoop": "Loop Playback",
     "playReverse": "Reverse Playback",
     "playSlower": "Playback Slower",
     "pressKey": "Press a key…",

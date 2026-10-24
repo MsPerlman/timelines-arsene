@@ -16,6 +16,7 @@ export const DEFAULT_KEYBINDS = {
   playReverse: { label: "Reverse Playback", keys: ["R"] },
   playSlower: { label: "Playback Slower", keys: [","] },
   playFaster: { label: "Playback Faster", keys: ["."] },
+  playLoop: { label: "Loop Playback", keys: ["L"] },
 };
 
 export function cloneDefaultKeybinds() {
