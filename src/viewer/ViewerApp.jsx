@@ -433,6 +433,14 @@ export default function ViewerApp() {
 
   const handleSelect = useCallback((id) => setSelectedId(id), []);
 
+  // only this timeline is loaded here, so links can only land on its own elements
+  const handleFollowLink = useCallback((link) => {
+    const id = link?.element;
+    if (!id || !timelineData?.elements?.some((el) => el.id === id)) return;
+    setSelectedId(id);
+    requestAnimationFrame(() => timelineViewRef.current?.scrollToElement?.(id));
+  }, [timelineData]);
+
   const handlePatchFile = useCallback((patch) => {
     setTimelineData((prev) => prev ? { ...prev, file: { ...(prev.file ?? {}), ...patch } } : prev);
   }, []);
@@ -769,6 +777,8 @@ export default function ViewerApp() {
               onSelectNext={handleSelectNext}
               prevElement={selectionNavigation.prevElement}
               nextElement={selectionNavigation.nextElement}
+              onFollowLink={handleFollowLink}
+              localLinksOnly
             />
           </ErrorBoundary>
         </aside>

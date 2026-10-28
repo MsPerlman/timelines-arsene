@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } fr
 import { useTranslation } from "react-i18next";
 import { Maximize2, Minimize2, Link, Trash2, ChevronLeft, ChevronRight, ChevronDown, Pencil, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X, Image as ImageIcon, Shapes, MoveVertical, Minus, SquareDashed, CalendarOff, EyeOff, ArrowLeftToLine, ArrowRightToLine, CaseSensitive, Plus } from "lucide-react";
 import NoteEditor from "./NoteEditor";
+import TimelineLinksSection from "./TimelineLinksSection";
 import NoteFileName from "./NoteFileName";
 import WikiSection from "./WikiSection";
 import SourcesSection from "./SourcesSection";
@@ -68,7 +69,7 @@ import ColorPicker from "./ColorPicker";
 
 
 // Order of the groups in the "Add property" menu
-const PROPERTY_GROUPS = ["location", "appearance", "visibility", "date"];
+const PROPERTY_GROUPS = ["location", "appearance", "visibility", "date", "connections"];
 
 const EVENT_STROKE_STYLE_OPTIONS = [
   { value: "solid", label: "Solid" },
@@ -100,6 +101,8 @@ export default function RightPanel({
   onClose,
   coordPickTargetId = null,
   onRequestCoordPick,
+  onFollowLink,
+  localLinksOnly = false,
   onNoteFileRenamed,
 }) {
   const { t } = useTranslation("timeline");
@@ -1114,6 +1117,7 @@ export default function RightPanel({
     { key: "hideDetails", icon: EyeOff, group: "visibility", label: t("fields.hideDetails", "Hide Details"), available: isSpan || isEra, isSet: formData.hideDetails === true || (formData.hideName === true && formData.hideYears === true) },
     { key: "fuzzyStart", icon: ArrowLeftToLine, group: "date", label: t("fields.fuzzyStart", "Fuzzy Start"), available: isEra, isSet: formData.fuzzyStart === true },
     { key: "fuzzyEnd", icon: ArrowRightToLine, group: "date", label: t("fields.fuzzyEnd", "Fuzzy End"), available: isEra, isSet: formData.fuzzyEnd === true },
+    { key: "links", icon: Link, group: "connections", label: t("links.label", "Connections"), available: true, isSet: Array.isArray(formData.links) && formData.links.length > 0 },
   ].filter((p) => p.available);
   // What clearing each optional property resets; solid is the stored default for event strokes
   const clearPropFields = {
@@ -1128,6 +1132,7 @@ export default function RightPanel({
     hideDetails: { delete: ["hideDetails", "hideName"] },
     fuzzyStart: { delete: ["fuzzyStart"] },
     fuzzyEnd: { delete: ["fuzzyEnd"] },
+    links: { delete: ["links"] },
   };
   const removeProp = (key) => {
     const { delete: fields = [], set = {} } = clearPropFields[key] ?? {};
@@ -1153,6 +1158,7 @@ export default function RightPanel({
     appearance: t("rightPanel.propertyGroups.appearance", "Appearance"),
     visibility: t("rightPanel.propertyGroups.visibility", "Visibility"),
     date: t("rightPanel.propertyGroups.date", "Date"),
+    connections: t("rightPanel.propertyGroups.connections", "Related"),
   };
   const hasSources = Array.isArray(formData.sources) && formData.sources.length > 0;
   const useWiki = !!timelineData?.file?.useWiki;
@@ -1399,6 +1405,15 @@ export default function RightPanel({
                 <p>{[formData.lat, formData.lng].filter((v) => v !== "" && v != null).join(", ")}</p>
               </div>
             )}
+
+            <TimelineLinksSection
+              element={formData}
+              timelineData={timelineData}
+              isEditMode={false}
+              readOnly={readOnly}
+              onFollowLink={onFollowLink}
+              localOnly={localLinksOnly}
+            />
 
             {formData.noteFile && (
               <>
@@ -2677,6 +2692,23 @@ export default function RightPanel({
                     + Add Break
                   </button>
                 </div>
+            )}
+
+            {/* links are an optional property like the rest, only shown once added or set */}
+            {isPropVisible("links") && (
+              <TimelineLinksSection
+                element={formData}
+                timelineData={timelineData}
+                isEditMode
+                readOnly={readOnly}
+                onFollowLink={onFollowLink}
+                removeButton={renderRemoveProp("links")}
+                startAdding={addedProps.includes("links")}
+                onCommit={(next) => {
+                  setFormData(next);
+                  commitDraft(next);
+                }}
+              />
             )}
 
             {hiddenProps.length > 0 && (
