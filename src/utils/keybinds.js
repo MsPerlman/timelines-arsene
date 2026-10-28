@@ -13,6 +13,10 @@ export const DEFAULT_KEYBINDS = {
   newEvent: { label: "New Event", keys: ["Ctrl", "Shift", "E"] },
   newSpan: { label: "New Span", keys: ["Ctrl", "Shift", "S"] },
   newEra: { label: "New Era", keys: ["Ctrl", "Shift", "R"] },
+  playReverse: { label: "Reverse Playback", keys: ["R"] },
+  playSlower: { label: "Playback Slower", keys: [","] },
+  playFaster: { label: "Playback Faster", keys: ["."] },
+  playLoop: { label: "Loop Playback", keys: ["L"] },
 };
 
 export function cloneDefaultKeybinds() {

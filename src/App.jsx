@@ -43,6 +43,7 @@ import { parseFilterQuery } from "./utils/filterUtils";
 import useEscapeKey from "./hooks/useEscapeKey";
 import { TimelineColorsContext, collectTimelineColors } from "./hooks/useColorPalette";
 import { findLinkTarget, normalizeListing } from "./utils/timelineLinks";
+import { useNoteContents } from "./hooks/useNoteContents";
 import "./styles/index.css";
 
 const DEFAULT_GROUP_ID = "g-main";
@@ -322,6 +323,17 @@ function App() {
   // breadcrumbs for link hopping so u can always find ur way back home
   const [linkBackStack, setLinkBackStack] = useState([]);
   const [pendingLinkSelect, setPendingLinkSelect] = useState(null);
+  const [noteSearchRefresh, setNoteSearchRefresh] = useState(0);
+  // notes get re-read every time search opens so fresh edits show up. no stale gossip here
+  const noteContents = useNoteContents({
+    timelineFile: timelineData?.file,
+    elements: timelineData?.elements,
+    enabled: Boolean(timelineData),
+    refreshKey: noteSearchRefresh,
+  });
+  useEffect(() => {
+    if (isSearchOpen) setNoteSearchRefresh((n) => n + 1);
+  }, [isSearchOpen]);
 
   useEscapeKey(!!importConflict, () => setImportConflict(null));
   useEscapeKey(!!skippedFilesNotice, () => setSkippedFilesNotice(null));
@@ -1087,6 +1099,20 @@ function App() {
       return updatedData;
     });
   };
+
+  // every element pointing at the old note follows it to its new name. loyal little things
+  const handleNoteFileRenamed = useCallback((oldRef, newRef) => {
+    if (!oldRef || !newRef || oldRef === newRef) return;
+    setTimelineData((prevData) => {
+      if (!prevData?.elements?.some((el) => el.noteFile === oldRef)) return prevData;
+      const updatedData = {
+        ...prevData,
+        elements: prevData.elements.map((el) => (el.noteFile === oldRef ? { ...el, noteFile: newRef } : el)),
+      };
+      saveCurrentTimeline(updatedData).catch(console.error);
+      return updatedData;
+    });
+  }, [saveCurrentTimeline]);
 
   // Coordinates picked by clicking the map while the right panel picker is armed
   const handleCoordinatePicked = useCallback(({ lat, lng }) => {
@@ -2834,6 +2860,7 @@ function App() {
               allElements={timelineData.elements}
               chipFilter={parsedChipQuery}
               chipQuery={chipQuery}
+              noteContents={noteContents}
               activeTags={activeTags}
               hiddenTags={hiddenTags}
               onToggleTag={handleToggleTag}
@@ -2911,6 +2938,7 @@ function App() {
             <ErrorBoundary name={t("common:panels.spreadsheet", "Spreadsheet")}>
               <SpreadsheetView
                 timelineData={filteredTimelineData}
+                noteContents={noteContents}
                 selectedId={selectedId}
                 onSelect={handleSelect}
                 onUpdate={handleUpdate}
@@ -2972,6 +3000,7 @@ function App() {
               onTogglePinnedTag={handleTogglePinnedTag}
               onViewportYearChange={handleViewportYearChange}
               onChipQueryChange={setChipQuery}
+              noteContents={noteContents}
               tagFilterRequest={tagFilterRequest}
               focusSpanRequest={focusSpanRequest}
               coordPickRequest={coordPickRequest}
@@ -3116,6 +3145,7 @@ function App() {
                 coordPickTargetId={coordPickRequest?.id ?? null}
                 onRequestCoordPick={handleRequestCoordPick}
                 onFollowLink={handleFollowLink}
+                onNoteFileRenamed={handleNoteFileRenamed}
               />
               </ErrorBoundary>
             </aside>
@@ -3228,6 +3258,7 @@ function App() {
         elements={timelineData?.elements ?? []}
         onSelect={handleSearchSelect}
         fileSettings={timelineData?.file}
+        noteContents={noteContents}
       />
       {importConflictModal}
       {skippedFilesModal}
