@@ -36,3 +36,22 @@ test("element ranges and week bars", async () => {
   assert.ok(bars.find((b) => b.item.id === "a").continuesAfter);
   assert.strictEqual(elementDayRange({ type: "event" }), null);
 });
+
+test("BCE months line up with the app's month lengths", async () => {
+  const { buildMonthGrid, dayNumber } = await load();
+  const { daysInMonth } = await import("../src/utils/dateUtils.js");
+  // 44 BCE (astronomical -43) is where March 1 went missing
+  const march = buildMonthGrid(-43, 3).flatMap((w) => w.days).filter((d) => d.inMonth);
+  assert.strictEqual(march[0].day, 1);
+  assert.strictEqual(march.length, 31);
+  let previousEnd = null;
+  for (let year = -1200; year <= 50; year++) {
+    for (let month = 1; month <= 12; month++) {
+      const days = buildMonthGrid(year, month).flatMap((w) => w.days).filter((d) => d.inMonth);
+      assert.strictEqual(days.length, daysInMonth(year, month), `${year}-${month}`);
+      const first = dayNumber(year, month, 1);
+      if (previousEnd !== null) assert.strictEqual(first, previousEnd + 1, `${year}-${month} follows on`);
+      previousEnd = dayNumber(year, month, daysInMonth(year, month));
+    }
+  }
+});

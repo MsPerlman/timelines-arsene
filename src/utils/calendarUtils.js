@@ -29,7 +29,8 @@ export function getCalendarNames(locale = "en") {
 // proleptic gregorian day number, so year -300 gets a calendar too (the Date object gets weird there)
 export function dayNumber(year, month, day) {
   const y = month <= 2 ? year - 1 : year;
-  const era = Math.floor((y >= 0 ? y : y - 399) / 400);
+  // Math.floor already rounds negative years down, so no extra -399 (that pushed BCE dates off by an era)
+  const era = Math.floor(y / 400);
   const yoe = y - era * 400;
   const doy = Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1;
   const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
@@ -43,7 +44,7 @@ export function weekdayIndex(year, month, day) {
 
 export function fromDayNumber(n) {
   const z = n + 719468;
-  const era = Math.floor((z >= 0 ? z : z - 146096) / 146097);
+  const era = Math.floor(z / 146097);
   const doe = z - era * 146097;
   const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
   const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
