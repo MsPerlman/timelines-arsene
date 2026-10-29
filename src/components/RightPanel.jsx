@@ -1,7 +1,9 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Maximize2, Minimize2, Link, Trash2, ChevronLeft, ChevronRight, ChevronDown, Pencil, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X, Image as ImageIcon, Shapes, MoveVertical, Minus, SquareDashed, CalendarOff, EyeOff, ArrowLeftToLine, ArrowRightToLine } from "lucide-react";
+import { Maximize2, Minimize2, Link, Trash2, ChevronLeft, ChevronRight, ChevronDown, Pencil, Calendar, Clock, FileText, BookOpen, ImagePlus, MapPin, RotateCcw, X, Image as ImageIcon, Shapes, MoveVertical, Minus, SquareDashed, CalendarOff, EyeOff, ArrowLeftToLine, ArrowRightToLine, CaseSensitive, Plus } from "lucide-react";
 import NoteEditor from "./NoteEditor";
+import TimelineLinksSection from "./TimelineLinksSection";
+import NoteFileName from "./NoteFileName";
 import WikiSection from "./WikiSection";
 import SourcesSection from "./SourcesSection";
 import { useNoteManagement } from "../hooks/useNoteManagement";
@@ -58,6 +60,7 @@ const parseTypedTime = (raw) => {
   return null;
 };
 import { formatYear, withApproxLabel, formatApproxRange, DEFAULT_APPROX_LABEL } from "../utils/timelineUtils";
+import { resolveElementFontSize, ELEMENT_FONT_SIZE_MIN, ELEMENT_FONT_SIZE_MAX } from "../utils/elementFont";
 import { isValidIdValue, isValidTagValue, normalizeTagValue, buildValidatedUpdate } from "../utils/validation";
 import { validationMessage } from "../i18n/validationMessages";
 import { normalizeColor } from "../utils/colorUtils";
@@ -66,7 +69,7 @@ import ColorPicker from "./ColorPicker";
 
 
 // Order of the groups in the "Add property" menu
-const PROPERTY_GROUPS = ["location", "appearance", "visibility", "date"];
+const PROPERTY_GROUPS = ["location", "appearance", "visibility", "date", "connections"];
 
 const EVENT_STROKE_STYLE_OPTIONS = [
   { value: "solid", label: "Solid" },
@@ -98,6 +101,9 @@ export default function RightPanel({
   onClose,
   coordPickTargetId = null,
   onRequestCoordPick,
+  onFollowLink,
+  localLinksOnly = false,
+  onNoteFileRenamed,
 }) {
   const { t } = useTranslation("timeline");
   // Listed statically so i18next-parser sees every option key.
@@ -140,11 +146,12 @@ export default function RightPanel({
     handleAddExistingNote,
     handleDeleteNote,
     handleUnlinkNote,
+    handleRenameNote,
     handlePickLocalImage,
     resolveNoteImageSrc,
     handlePickThumbnail,
     handleDropThumbnail,
-  } = useNoteManagement({ selectedElement, timelineData, formData, setFormData, onUpdate });
+  } = useNoteManagement({ selectedElement, timelineData, formData, setFormData, onUpdate, onNoteFileRenamed });
   const prevSelectedIdRef = useRef(null);
   const titleTextareaRef = useRef(null);
   const endInputRef = useRef(null);
@@ -1102,6 +1109,7 @@ export default function RightPanel({
     { key: "coordinates", icon: MapPin, group: "location", label: t("fields.coordinates", "Coordinates"), available: !!timelineData?.file?.useMaps, isSet: formData.lat != null || formData.lng != null },
     { key: "thumbnail", icon: ImageIcon, group: "appearance", label: t("fields.thumbnail", "Thumbnail"), available: isEvent, isSet: !!formData.thumbnail },
     { key: "icon", icon: Shapes, group: "appearance", label: t("fields.icon", "Icon"), available: true, isSet: !!formData.icon },
+    { key: "fontSize", icon: CaseSensitive, group: "appearance", label: t("fields.fontSize", "Font Size"), available: isEvent || isSpan, isSet: formData.fontSize != null },
     { key: "size", icon: MoveVertical, group: "appearance", label: t("fields.size", "Size"), available: isSpan || isEra, isSet: !!(isSpan ? formData.spanSize : formData.eraSize) },
     { key: "lineStyle", icon: Minus, group: "appearance", label: t("fields.lineStyle", "Line Style"), available: isEvent, isSet: !!formData.eventLineStyle && formData.eventLineStyle !== "solid" },
     { key: "borderStyle", icon: SquareDashed, group: "appearance", label: t("fields.borderStyle", "Border Style"), available: isEvent, isSet: !!formData.eventBorderStyle && formData.eventBorderStyle !== "solid" },
@@ -1109,12 +1117,14 @@ export default function RightPanel({
     { key: "hideDetails", icon: EyeOff, group: "visibility", label: t("fields.hideDetails", "Hide Details"), available: isSpan || isEra, isSet: formData.hideDetails === true || (formData.hideName === true && formData.hideYears === true) },
     { key: "fuzzyStart", icon: ArrowLeftToLine, group: "date", label: t("fields.fuzzyStart", "Fuzzy Start"), available: isEra, isSet: formData.fuzzyStart === true },
     { key: "fuzzyEnd", icon: ArrowRightToLine, group: "date", label: t("fields.fuzzyEnd", "Fuzzy End"), available: isEra, isSet: formData.fuzzyEnd === true },
+    { key: "links", icon: Link, group: "connections", label: t("links.label", "Connections"), available: true, isSet: Array.isArray(formData.links) && formData.links.length > 0 },
   ].filter((p) => p.available);
   // What clearing each optional property resets; solid is the stored default for event strokes
   const clearPropFields = {
     coordinates: { delete: ["lat", "lng"] },
     thumbnail: { delete: ["thumbnail", "thumbnailStyle", "thumbnailFit"] },
     icon: { delete: ["icon"] },
+    fontSize: { delete: ["fontSize"] },
     size: { delete: ["spanSize", "eraSize"] },
     lineStyle: { set: { eventLineStyle: "solid" } },
     borderStyle: { set: { eventBorderStyle: "solid" } },
@@ -1122,6 +1132,7 @@ export default function RightPanel({
     hideDetails: { delete: ["hideDetails", "hideName"] },
     fuzzyStart: { delete: ["fuzzyStart"] },
     fuzzyEnd: { delete: ["fuzzyEnd"] },
+    links: { delete: ["links"] },
   };
   const removeProp = (key) => {
     const { delete: fields = [], set = {} } = clearPropFields[key] ?? {};
@@ -1147,6 +1158,7 @@ export default function RightPanel({
     appearance: t("rightPanel.propertyGroups.appearance", "Appearance"),
     visibility: t("rightPanel.propertyGroups.visibility", "Visibility"),
     date: t("rightPanel.propertyGroups.date", "Date"),
+    connections: t("rightPanel.propertyGroups.connections", "Related"),
   };
   const hasSources = Array.isArray(formData.sources) && formData.sources.length > 0;
   const useWiki = !!timelineData?.file?.useWiki;
@@ -1393,6 +1405,15 @@ export default function RightPanel({
                 <p>{[formData.lat, formData.lng].filter((v) => v !== "" && v != null).join(", ")}</p>
               </div>
             )}
+
+            <TimelineLinksSection
+              element={formData}
+              timelineData={timelineData}
+              isEditMode={false}
+              readOnly={readOnly}
+              onFollowLink={onFollowLink}
+              localOnly={localLinksOnly}
+            />
 
             {formData.noteFile && (
               <>
@@ -2028,6 +2049,63 @@ export default function RightPanel({
               </div>
             )}
 
+            {/* font size. blank means "whatever the timeline says", the chillest option */}
+            {(isEvent || isSpan) && isPropVisible("fontSize") && (() => {
+              const defaultSize = isEvent ? (Number(timelineData?.file?.eventFontSize) || 10) : 11;
+              const currentFontSize = resolveElementFontSize(formData.fontSize) ?? defaultSize;
+              const commitFontSize = (raw) => {
+                const next = { ...formData };
+                const size = resolveElementFontSize(raw);
+                if (size == null || size === defaultSize) delete next.fontSize;
+                else next.fontSize = size;
+                setFormData(next);
+                commitDraft(next);
+              };
+              return (
+                <div className="form-group">
+                  {renderRemoveProp("fontSize")}
+                  <div className="edit-row">
+                    <label htmlFor="fontSize" title={t("rightPanel.fontSizeHint", "In pixels")}>{t("fields.fontSize", "Font Size")}</label>
+                    <div className="edit-separator" />
+                    {/* our own - / + instead of the os spinner, which ignores the theme */}
+                    <div className="edit-font-size-stepper">
+                      <button
+                        type="button"
+                        className="edit-font-size-step"
+                        aria-label={t("rightPanel.fontSizeSmaller", "Smaller")}
+                        disabled={currentFontSize <= ELEMENT_FONT_SIZE_MIN}
+                        onClick={() => commitFontSize(currentFontSize - 1)}
+                      >
+                        <Minus size={12} strokeWidth={2.25} />
+                      </button>
+                      <input
+                        id="fontSize"
+                        type="number"
+                        className="edit-input edit-font-size-input"
+                        min={ELEMENT_FONT_SIZE_MIN}
+                        max={ELEMENT_FONT_SIZE_MAX}
+                        step={1}
+                        value={formData.fontSize ?? ""}
+                        placeholder={String(defaultSize)}
+                        onChange={(e) => handleChange("fontSize", e.target.value === "" ? undefined : Number(e.target.value))}
+                        onBlur={(e) => commitFontSize(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                      />
+                      <button
+                        type="button"
+                        className="edit-font-size-step"
+                        aria-label={t("rightPanel.fontSizeLarger", "Larger")}
+                        disabled={currentFontSize >= ELEMENT_FONT_SIZE_MAX}
+                        onClick={() => commitFontSize(currentFontSize + 1)}
+                      >
+                        <Plus size={12} strokeWidth={2.25} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Size (spans only) */}
             {formData.type === "span" && isPropVisible("size") && (
               <div className="form-group">
@@ -2616,6 +2694,23 @@ export default function RightPanel({
                 </div>
             )}
 
+            {/* links are an optional property like the rest, only shown once added or set */}
+            {isPropVisible("links") && (
+              <TimelineLinksSection
+                element={formData}
+                timelineData={timelineData}
+                isEditMode
+                readOnly={readOnly}
+                onFollowLink={onFollowLink}
+                removeButton={renderRemoveProp("links")}
+                startAdding={addedProps.includes("links")}
+                onCommit={(next) => {
+                  setFormData(next);
+                  commitDraft(next);
+                }}
+              />
+            )}
+
             {hiddenProps.length > 0 && (
               <div className="add-property-wrap">
                 <button type="button" className="add-property-btn" onClick={() => setIsAddPropOpen((v) => !v)}>
@@ -2721,6 +2816,7 @@ export default function RightPanel({
                     resolveImageSrc={resolveNoteImageSrc}
                     label={<span className="rp-note-label rp-note-label-note">{t("noteEditor.label", "Note")}</span>}
                     meta={noteWordCount > 0 ? noteWordCountLabel : null}
+                    subheader={noteExists ? <NoteFileName noteFile={formData.noteFile} onRename={handleRenameNote} readOnly={readOnly} /> : null}
                   />
                 </div>
               )}

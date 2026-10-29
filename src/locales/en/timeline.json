@@ -99,6 +99,7 @@
     "duration": "Duration",
     "endDate": "End Date",
     "extendFrom": "Extend From",
+    "fontSize": "Font Size",
     "fuzzyEnd": "Fuzzy End",
     "fuzzyStart": "Fuzzy Start",
     "group": "Group",
@@ -180,6 +181,21 @@
     "none": "None",
     "solid": "Solid"
   },
+  "links": {
+    "add": "Add connection",
+    "elementField": "Element",
+    "goTo": "Go to {{label}}",
+    "label": "Connections",
+    "loading": "Loading…",
+    "missingHint": "That timeline isn't in your library anymore",
+    "missingTimeline": "Missing timeline",
+    "pickElement": "Pick an element…",
+    "pickTimeline": "Pick a timeline…",
+    "remove": "Remove connection to {{label}}",
+    "thisTimeline": "This timeline",
+    "timelineField": "Timeline",
+    "wholeTimeline": "Whole timeline"
+  },
   "mapPick": {
     "escToCancel": "Esc to cancel"
   },
@@ -211,9 +227,33 @@
     "wordCount_one": "{{count}} word",
     "wordCount_other": "{{count}} words"
   },
+  "noteFile": {
+    "errors": {
+      "exists": "A note with that name already exists.",
+      "failed": "Rename failed.",
+      "invalidName": "That name won't work as a file name.",
+      "locked": "This note can't be renamed from here.",
+      "noTimeline": "No timeline open."
+    },
+    "newName": "New note file name",
+    "rename": "Rename note file",
+    "save": "Save name"
+  },
   "openSource": "Open source",
   "options": {
     "inherit": "Inherit"
+  },
+  "playback": {
+    "direction": "Direction",
+    "faster": "Faster",
+    "forward": "Forward",
+    "loop": "Loop",
+    "options": "Playback options",
+    "playReverse": "Play in reverse",
+    "reverse": "Reverse",
+    "slower": "Slower",
+    "speed": "Speed",
+    "switchDirection": "Switch direction"
   },
   "rightPanel": {
     "addProperty": "Add property",
@@ -239,6 +279,9 @@
       "today": "Today"
     },
     "extendFrom": "Extend from",
+    "fontSizeHint": "In pixels",
+    "fontSizeLarger": "Larger",
+    "fontSizeSmaller": "Smaller",
     "noContiguousSpans": "No contiguous spans",
     "noMatchingSpans": "No matching spans",
     "noMatchingTimes": "No matching times",
@@ -246,6 +289,7 @@
     "pasteImageUrl": "Paste image URL",
     "propertyGroups": {
       "appearance": "Appearance",
+      "connections": "Related",
       "date": "Date",
       "location": "Location",
       "visibility": "Visibility"
@@ -258,8 +302,10 @@
     "uploadImage": "Upload image"
   },
   "search": {
+    "hitCount": "{{n}} hits",
+    "inNotes": "In notes",
     "noResults": "No results for “{{query}}”",
-    "placeholder": "Search spans, events, eras…"
+    "placeholderWithNotes": "Search spans, events, eras, notes…"
   },
   "sidebar": {
     "applyColor": "Apply Color to Elements",
