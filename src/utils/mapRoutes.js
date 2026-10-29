@@ -26,9 +26,10 @@ export function unwrapLongitudes(points) {
 
 export function buildRoutes(elements, mode, options = {}) {
   if (!mode || mode === "off" || !Array.isArray(elements)) return [];
-  const { viewportYear = null, limitToYear = false, tagColors = {}, groups = [] } = options;
+  const { viewportYear = null, limitToYear = false, isPointVisible = null, tagColors = {}, groups = [] } = options;
   const byId = new Map(elements.map((el) => [el.id, el]));
-  const located = elements.filter((el) => el && el.type !== "era" && hasCoords(el) && Number.isFinite(dateKey(el)));
+  // isPointVisible is the map's own marker rule, so a route never runs to a point with no marker
+  const located = elements.filter((el) => el && el.type !== "era" && hasCoords(el) && Number.isFinite(dateKey(el)) && (!isPointVisible || isPointVisible(el)));
   const buckets = new Map();
   const push = (key, meta, el) => {
     if (!buckets.has(key)) buckets.set(key, { ...meta, items: [] });

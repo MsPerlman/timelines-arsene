@@ -29,6 +29,20 @@ test("routes by tag, group, all, off and year limit", async () => {
   assert.deepStrictEqual(buildRoutes(ELEMENTS, "span", { limitToYear: true, viewportYear: 1901 }), []);
 });
 
+test("routes only join points the map is showing", async () => {
+  const { buildRoutes } = await import("../src/utils/mapRoutes.js");
+  // the map's "limit to year" marker rule: events on that exact year, spans covering it
+  const visibleAt = (year) => (el) => (el.type === "event" ? el.date === year : el.start <= year && year <= el.end);
+  // 1905: the trip span and the 1905 event are on the map, the 1902 event's marker is not
+  const at1905 = buildRoutes(ELEMENTS, "span", { isPointVisible: visibleAt(1905) });
+  assert.deepStrictEqual(at1905[0].points.map((p) => p.id), ["span-trip", "e2"]);
+  // 1903: only the span is showing, so there's nothing to join
+  assert.deepStrictEqual(buildRoutes(ELEMENTS, "span", { isPointVisible: visibleAt(1903) }), []);
+  // a hidden parent span still lends its color to the route between its visible events
+  const hiddenParent = buildRoutes(ELEMENTS, "span", { isPointVisible: (el) => el.type === "event" });
+  assert.strictEqual(hiddenParent[0].color, "#123456");
+});
+
 test("longitudes unwrap across the date line", async () => {
   const { unwrapLongitudes, screenBearing } = await import("../src/utils/mapRoutes.js");
   const pts = unwrapLongitudes([{ lat: 0, lng: 170 }, { lat: 0, lng: -170 }, { lat: 0, lng: -160 }]);

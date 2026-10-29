@@ -242,8 +242,8 @@ export default memo(forwardRef(function MapView({ elements = [], onSelect, onOpe
   );
   const [hoveredId, setHoveredId] = useState(null);
   const routes = useMemo(() => buildRoutes(elements, fileConfig?.mapRoutes, {
-    viewportYear,
-    limitToYear: fileConfig?.mapLimitToViewportYear === true,
+    // same rule as the markers above, so lines only join points that are actually on the map
+    isPointVisible: (el) => isMarkerVisibleAtViewportYear(el, viewportYear, { mapLimitToViewportYear: fileConfig?.mapLimitToViewportYear }),
     tagColors: fileConfig?.tagColors,
     groups: fileConfig?.groups,
   }), [elements, fileConfig?.mapRoutes, fileConfig?.mapLimitToViewportYear, fileConfig?.tagColors, fileConfig?.groups, viewportYear]);
