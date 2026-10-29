@@ -37,6 +37,7 @@ export default function SpreadsheetView({
   rightPanelWidth = 0,
   isRightPanelOpen = false,
   onSetViewMode,
+  viewSwitcher = null,
   onOpenSettings,
   onBackToHome,
   onAddEvent,
@@ -1756,7 +1757,8 @@ export default function SpreadsheetView({
             </div>
           )}
           <div className="sheet-colbar-divider" />
-          {onSetViewMode && (
+          {viewSwitcher}
+          {onSetViewMode && !viewSwitcher && (
             <button
               type="button"
               className="timeline-canvas-button"
