@@ -359,6 +359,14 @@ export default function HomePage({
     newEvent: t("hotkeys.newEvent", "New Event"),
     newSpan: t("hotkeys.newSpan", "New Span"),
     newEra: t("hotkeys.newEra", "New Era"),
+    playReverse: t("hotkeys.playReverse", "Reverse Playback"),
+    playSlower: t("hotkeys.playSlower", "Playback Slower"),
+    playFaster: t("hotkeys.playFaster", "Playback Faster"),
+    playLoop: t("hotkeys.playLoop", "Loop Playback"),
+    viewTimeline: t("hotkeys.viewTimeline", "Timeline View"),
+    viewMap: t("hotkeys.viewMap", "Map View"),
+    viewSpreadsheet: t("hotkeys.viewSpreadsheet", "Table View"),
+    viewCalendar: t("hotkeys.viewCalendar", "Calendar View"),
   }), [t]);
   // Empty string means "follow the system", which is the stored absence of a language key.
   const [language, setLanguage] = useState("");

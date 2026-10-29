@@ -261,6 +261,10 @@
     "newEvent": "New Event",
     "newSpan": "New Span",
     "play": "Play / Pause",
+    "playFaster": "Playback Faster",
+    "playLoop": "Loop Playback",
+    "playReverse": "Reverse Playback",
+    "playSlower": "Playback Slower",
     "pressKey": "Press a key…",
     "redo": "Redo",
     "search": "Search",
@@ -268,7 +272,11 @@
     "selectPrevious": "Select Previous",
     "selectTypeDown": "Select Type Down",
     "selectTypeUp": "Select Type Up",
-    "undo": "Undo"
+    "undo": "Undo",
+    "viewCalendar": "Calendar View",
+    "viewMap": "Map View",
+    "viewSpreadsheet": "Table View",
+    "viewTimeline": "Timeline View"
   },
   "maps": {
     "eraMarker": {

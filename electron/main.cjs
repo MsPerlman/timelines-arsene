@@ -1552,6 +1552,31 @@ ipcMain.handle('read-note', async (event, { timelineId, filename }) => {
   }
 });
 
+// batch read for searching inside notes. capped so a 900mb vault doesn't turn the app into a space heater
+const READ_NOTES_MAX_FILES = 5000;
+const READ_NOTES_MAX_BYTES = 2 * 1024 * 1024;
+ipcMain.handle('read-notes', async (event, { timelineId, filenames } = {}) => {
+  try {
+    if (!timelineId || !Array.isArray(filenames)) {
+      return { success: false, error: 'Missing timelineId or filenames' };
+    }
+    const unique = [...new Set(filenames.filter((f) => typeof f === 'string' && f.trim()))].slice(0, READ_NOTES_MAX_FILES);
+    const notes = {};
+    await Promise.all(unique.map(async (filename) => {
+      try {
+        const filePath = await resolveNotePath(timelineId, filename);
+        const stat = await fs.stat(filePath);
+        if (!stat.isFile() || stat.size > READ_NOTES_MAX_BYTES) return;
+        notes[filename] = await fs.readFile(filePath, 'utf8');
+      } catch { /* missing or sus path, just skip it */ }
+    }));
+    return { success: true, notes };
+  } catch (error) {
+    console.error('Error reading notes:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('write-note', async (event, { timelineId, filename, content }) => {
   try {
     if (!timelineId || !filename) {
@@ -1576,7 +1601,10 @@ ipcMain.handle('rename-note', async (event, { timelineId, oldFilename, newFilena
     }
     const oldPath = await resolveNotePath(timelineId, oldFilename);
     const nextPath = await resolveNotePath(timelineId, newFilename);
-    if (oldPath === nextPath) return { success: true };
+    // bare names get sanitized on the way in, so tell the renderer what actually landed on disk
+    const rawNext = String(newFilename).trim();
+    const filename = /[/\\]/.test(rawNext) ? rawNext.split('\\').join('/') : sanitizeNoteFilename(rawNext);
+    if (oldPath === nextPath) return { success: true, filename };
     // Case-only renames on Windows point at the same file and are safe to pass through
     const samePath = process.platform === 'win32' && oldPath.toLowerCase() === nextPath.toLowerCase();
     // fs.rename silently replaces the destination, so refuse instead of destroying another note
@@ -1591,7 +1619,7 @@ ipcMain.handle('rename-note', async (event, { timelineId, oldFilename, newFilena
       throw error;
     }
     markGitSyncDirty(timelineId);
-    return { success: true };
+    return { success: true, filename };
   } catch (error) {
     console.error('Error renaming note:', error);
     return { success: false, error: error.message };
