@@ -291,6 +291,10 @@
       "description": "Show the map as a 3D globe instead of a flat map. Needs WebGL.",
       "label": "Globe"
     },
+    "globeFarSide": {
+      "description": "Show markers on the other side of the globe faintly through it. Turn off to hide them.",
+      "label": "Show Markers on the Far Side"
+    },
     "markers": {
       "circle": "Circle",
       "diamond": "Diamond",

@@ -1286,7 +1286,8 @@
 
 /* Coordinate picking from the right panel */
 .timeline-map-view.is-picking .leaflet-container,
-.timeline-map-view.is-picking .leaflet-grab {
+.timeline-map-view.is-picking .leaflet-grab,
+.timeline-map-view.is-picking .maplibregl-canvas {
   cursor: crosshair;
 }
 
@@ -1342,6 +1343,15 @@
   line-height: 0;
 }
 
+.timeline-globe-view .maplibregl-marker-covered {
+  pointer-events: none;
+}
+
+/* above markers, which get re-added as the year changes */
+.timeline-globe-view .maplibregl-popup.map-element-tooltip {
+  z-index: 3;
+}
+
 .timeline-globe-view .maplibregl-popup.map-element-tooltip .maplibregl-popup-content {
   padding: 0;
   background: transparent;
@@ -1363,6 +1373,64 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
+/* same in every theme */
 .timeline-globe-view {
-  background: var(--app-bg);
+  background: radial-gradient(circle at 50% 45%, #1b2233 0%, #0e121c 55%, #080a10 100%);
+}
+
+/* 2D | 3D map control */
+.map-mode-control {
+  position: fixed;
+  top: 45px;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--accent-color);
+}
+
+.map-mode-segment {
+  display: flex;
+  gap: 2px;
+}
+
+.map-mode-segment button,
+.map-mode-rotate {
+  height: 32px;
+  min-width: 36px;
+  padding: 0 8px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ui-muted);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.map-mode-segment button:hover,
+.map-mode-rotate:hover {
+  background: var(--accent-color);
+  color: var(--text-primary);
+}
+
+.map-mode-segment button.is-active,
+.map-mode-rotate.is-active {
+  background: var(--surface-active);
+  border-color: var(--ui-muted);
+  color: var(--text-primary);
+}
+
+.map-mode-rotate {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
 }

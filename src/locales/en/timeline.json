@@ -197,7 +197,9 @@
     "wholeTimeline": "Whole timeline"
   },
   "map": {
-    "globeUnavailable": "Globe needs WebGL, showing the flat map instead"
+    "autoRotate": "Auto-rotate",
+    "globeUnavailable": "Globe needs WebGL, showing the flat map instead",
+    "mode": "Map style"
   },
   "mapPick": {
     "escToCancel": "Esc to cancel"

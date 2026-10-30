@@ -20,7 +20,7 @@ import { isFontReady, watchFontLoad } from "../utils/fontGate";
 import { parseTimelineInput, snapToMonthGrid, snapToDayGrid, fractionalYearToDate, daysInMonth, todayFractionalYear, displayDateTimeLabel, formatDuration } from "../utils/dateUtils";
 import { withAlpha, blendColors, normalizeColor } from "../utils/colorUtils";
 import { parseFilterQuery, matchesFilter, tokenizeFilterQuery, buildFilterContext, normalizeTag, quoteFilterValue } from "../utils/filterUtils";
-import { FileJson, Image, Video, Settings, Plus, Minus, CopyPlus, Trash2, Edit2, ListFilter, Play, Pause, Tag, Eye, EyeOff, Map as MapIcon, MapPin, GanttChartSquare, Table2, ExternalLink, HelpCircle, Maximize2, X, History, Crosshair, ArrowLeftRight, Repeat, SlidersHorizontal, Globe2 } from "lucide-react";
+import { FileJson, Image, Video, Settings, Plus, Minus, CopyPlus, Trash2, Edit2, ListFilter, Play, Pause, Tag, Eye, EyeOff, Map as MapIcon, MapPin, GanttChartSquare, Table2, ExternalLink, HelpCircle, Maximize2, X, History, Crosshair, ArrowLeftRight, Repeat, SlidersHorizontal, RotateCw } from "lucide-react";
 import { ICON_MAP } from "../config/elementIcons";
 import { drawTitleWatermark, saveExportFile } from "../utils/exportUtils";
 import { DETAIL_MIN, DETAIL_MAX, clamp } from "../utils/sliderUtils";
@@ -266,6 +266,8 @@ const chipsFromQuery = (query, nextId) => {
   return chips;
 };
 const MapView = lazy(() => import("./MapView"));
+// flat map and globe handle their own pointer input
+const MAP_SURFACE_SELECTOR = ".leaflet-container, .maplibregl-map";
 // the globe drags maplibre along, so it only gets loaded when someone actually asks for a planet
 const GlobeView = lazy(() => import("./GlobeView"));
 import "../styles/04-timeline.css";
@@ -601,6 +603,17 @@ const TimelineView = forwardRef(function TimelineView({
   }, [isViewControlled, onSetViewMode, showMap]);
   const [localGlobe, setLocalGlobe] = useState(null);
   const [globeFailed, setGlobeFailed] = useState(false);
+  const [globeAutoRotate, setGlobeAutoRotate] = useState(false);
+  const isGlobe = (localGlobe ?? timelineData?.file?.mapGlobe === true) && !globeFailed;
+  const setGlobeMode = (on) => {
+    setGlobeFailed(false);
+    if (onPatchFile && !readOnly) {
+      setLocalGlobe(null);
+      onPatchFile({ mapGlobe: on || undefined });
+    } else {
+      setLocalGlobe(on);
+    }
+  };
   const mapViewRef = useRef(null);
   const [sliderValue, setSliderValue] = useState(0);
   const [sliderYearLabel, setSliderYearLabel] = useState("");
@@ -2529,7 +2542,7 @@ const TimelineView = forwardRef(function TimelineView({
         return;
       }
 
-      const insideLeaflet = e.target.closest(".leaflet-container");
+      const insideLeaflet = e.target.closest(MAP_SURFACE_SELECTOR);
       if (insideLeaflet) {
         if (e.altKey) {
           e.preventDefault();
@@ -2579,7 +2592,7 @@ const TimelineView = forwardRef(function TimelineView({
         ".event",
         ".span-item",
         ".era-item",
-        ".leaflet-container",
+        MAP_SURFACE_SELECTOR,
         ".timeline-canvas-bar",
         ".timeline-canvas-button",
         ".timeline-slider",
@@ -2631,7 +2644,7 @@ const TimelineView = forwardRef(function TimelineView({
 
     // No preventDefault on touchstart so taps still become clicks (selection)
     const touchExcludeSelector = [
-      ".leaflet-container",
+      MAP_SURFACE_SELECTOR,
       ".timeline-canvas-bar",
       ".timeline-slider-container",
       ".timeline-context-menu",
@@ -2847,7 +2860,7 @@ const TimelineView = forwardRef(function TimelineView({
   const handleContextMenu = (e) => {
     if (readOnly) return;
     const target = e.target;
-    if (target?.closest?.(".leaflet-container")) {
+    if (target?.closest?.(MAP_SURFACE_SELECTOR)) {
       return;
     }
     const elementNode = target.closest('.event, .span-item, .era-item');
@@ -4942,7 +4955,7 @@ const TimelineView = forwardRef(function TimelineView({
         </div>
       )}
 
-      {showMap && (localGlobe ?? file?.mapGlobe === true) && !globeFailed && (
+      {showMap && isGlobe && (
         <Suspense fallback={<div className="timeline-map-placeholder" />}>
           <GlobeView
             ref={mapViewRef}
@@ -4960,11 +4973,12 @@ const TimelineView = forwardRef(function TimelineView({
               setGlobeFailed(true);
               onNotify?.(t("map.globeUnavailable", "Globe needs WebGL, showing the flat map instead"), "error", 3500);
             }}
+            autoRotate={globeAutoRotate}
           />
         </Suspense>
       )}
 
-      {showMap && !((localGlobe ?? file?.mapGlobe === true) && !globeFailed) && (
+      {showMap && !isGlobe && (
         <Suspense fallback={<div className="timeline-map-placeholder" />}>
           <MapView
             ref={mapViewRef}
@@ -4980,6 +4994,31 @@ const TimelineView = forwardRef(function TimelineView({
             onPickCoordinate={onCoordinatePicked}
           />
         </Suspense>
+      )}
+
+      {showMap && (
+        <div className="map-mode-control" style={{ right: `${zoomButtonOffset + 52}px` }}>
+          <div className="map-mode-segment" role="group" aria-label={t("map.mode", "Map style")}>
+            <button type="button" className={!isGlobe ? "is-active" : ""} aria-pressed={!isGlobe} onClick={() => setGlobeMode(false)} title={t("toolbar.flatMap", "Flat map")}>
+              2D
+            </button>
+            <button type="button" className={isGlobe ? "is-active" : ""} aria-pressed={isGlobe} onClick={() => setGlobeMode(true)} title={t("toolbar.globe", "Globe")}>
+              3D
+            </button>
+          </div>
+          {isGlobe && (
+            <button
+              type="button"
+              className={`map-mode-rotate${globeAutoRotate ? " is-active" : ""}`}
+              aria-pressed={globeAutoRotate}
+              aria-label={t("map.autoRotate", "Auto-rotate")}
+              title={t("map.autoRotate", "Auto-rotate")}
+              onClick={() => setGlobeAutoRotate((on) => !on)}
+            >
+              <RotateCw size={14} strokeWidth={2} />
+            </button>
+          )}
+        </div>
       )}
 
       {showMap && coordPickRequest?.id && (
@@ -5014,29 +5053,6 @@ const TimelineView = forwardRef(function TimelineView({
         </button>
         <div className="timeline-canvas-divider" />
         {isViewControlled && viewSwitcher}
-        {showMap && (() => {
-          const isGlobe = (localGlobe ?? file?.mapGlobe === true) && !globeFailed;
-          return (
-            <button
-              type="button"
-              className={`timeline-canvas-button${isGlobe ? " timeline-canvas-button-active" : ""}`}
-              aria-label={isGlobe ? t("toolbar.flatMap", "Flat map") : t("toolbar.globe", "Globe")}
-              aria-pressed={isGlobe}
-              data-tooltip={isGlobe ? t("toolbar.flatMap", "Flat map") : t("toolbar.globe", "Globe")}
-              onClick={() => {
-                setGlobeFailed(false);
-                if (onPatchFile && !readOnly) {
-                  setLocalGlobe(null);
-                  onPatchFile({ mapGlobe: !isGlobe || undefined });
-                } else {
-                  setLocalGlobe(!isGlobe);
-                }
-              }}
-            >
-              <Globe2 size={16} />
-            </button>
-          );
-        })()}
         {timelineData?.file?.useMaps && !isViewControlled && (
           <button
             type="button"

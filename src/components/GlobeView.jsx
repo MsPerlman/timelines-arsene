@@ -136,6 +136,7 @@ export default memo(forwardRef(function GlobeView({
   pickMode = false,
   onPickCoordinate,
   onUnavailable,
+  autoRotate = false,
 }, ref) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -163,8 +164,8 @@ export default memo(forwardRef(function GlobeView({
   );
 
   const routes = useMemo(() => buildRoutes(elements, fileConfig?.mapRoutes, {
-    viewportYear,
-    limitToYear: fileConfig?.mapLimitToViewportYear === true,
+    // match marker visibility
+    isPointVisible: (el) => isMarkerVisibleAtViewportYear(el, viewportYear, { mapLimitToViewportYear: fileConfig?.mapLimitToViewportYear }),
     tagColors: fileConfig?.tagColors,
     groups: fileConfig?.groups,
   }), [elements, fileConfig?.mapRoutes, fileConfig?.mapLimitToViewportYear, fileConfig?.tagColors, fileConfig?.groups, viewportYear]);
@@ -303,6 +304,12 @@ export default memo(forwardRef(function GlobeView({
       } else {
         entry.marker.setLngLat(lngLat);
       }
+      // far-side markers: faint (default) or hidden
+      const coveredOpacity = fileConfig?.mapGlobeHideFarSide === true ? "0" : "0.2";
+      if (entry.coveredOpacity !== coveredOpacity) {
+        entry.marker.setOpacity("1", coveredOpacity);
+        entry.coveredOpacity = coveredOpacity;
+      }
     }
     for (const [id, entry] of store) {
       if (seen.has(id)) continue;
@@ -315,6 +322,37 @@ export default memo(forwardRef(function GlobeView({
     const source = isReady ? mapRef.current?.getSource(ROUTE_SOURCE) : null;
     source?.setData(routes.length ? routesToGeoJson(routes) : EMPTY_ROUTES);
   }, [routes, isReady]);
+
+  // pauses while the pointer is down or the map is moving: moving the camera mid-gesture cancels drags
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!autoRotate || !isReady || !map) return undefined;
+    const DEGREES_PER_SECOND = 4;
+    const surface = map.getCanvasContainer();
+    let held = false;
+    const hold = () => { held = true; };
+    const release = () => { held = false; };
+    surface.addEventListener("pointerdown", hold);
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    let frame = null;
+    let last = null;
+    const spin = (time) => {
+      if (last !== null && !held && !map.isMoving()) {
+        const center = map.getCenter();
+        map.setCenter([center.lng - (DEGREES_PER_SECOND * (time - last)) / 1000, center.lat]);
+      }
+      last = time;
+      frame = requestAnimationFrame(spin);
+    };
+    frame = requestAnimationFrame(spin);
+    return () => {
+      cancelAnimationFrame(frame);
+      surface.removeEventListener("pointerdown", hold);
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+    };
+  }, [autoRotate, isReady]);
 
   useEffect(() => {
     const map = mapRef.current;
