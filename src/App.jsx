@@ -13,6 +13,9 @@ import Toast from "./components/Toast";
 import TopBar from "./components/TopBar";
 import HomePage from "./components/HomePage";
 import SearchOverlay from "./components/SearchOverlay";
+import CalendarView from "./components/CalendarView";
+import ViewSwitcher from "./components/ViewSwitcher";
+import { getAvailableViews } from "./utils/views";
 import {
   saveTimelineToFile,
   chooseTimelinesDir,
@@ -42,6 +45,8 @@ import { parseTimelineInput, snapToMonthGrid, snapToDayGrid, daysInMonth, fracti
 import { parseFilterQuery } from "./utils/filterUtils";
 import useEscapeKey from "./hooks/useEscapeKey";
 import { TimelineColorsContext, collectTimelineColors } from "./hooks/useColorPalette";
+import { findLinkTarget, normalizeListing } from "./utils/timelineLinks";
+import { useNoteContents } from "./hooks/useNoteContents";
 import "./styles/index.css";
 
 const DEFAULT_GROUP_ID = "g-main";
@@ -231,7 +236,7 @@ function App() {
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
   const [isRightCollapsed, setIsRightCollapsed] = useState(false);
   const [rightLockState, setRightLockState] = useState(null); // null | "open" | "closed"
-  const [viewMode, setViewMode] = useState("timeline"); // "timeline" | "spreadsheet"
+  const [viewMode, setViewMode] = useState("timeline"); // "timeline" | "map" | "spreadsheet" | "calendar"
   const [isRightMaximized, setIsRightMaximized] = useState(false);
   const [lastSelectedId, setLastSelectedId] = useState(null);
 
@@ -304,6 +309,8 @@ function App() {
   const [coordPickRequest, setCoordPickRequest] = useState(null);
   const handleRequestCoordPick = useCallback((id, title) => {
     setCoordPickRequest((prev) => (prev?.id === id ? null : { id, title, n: (prev?.n ?? 0) + 1 }));
+    // picking coordinates only makes sense on a map, so go there
+    setViewMode((mode) => (mode === "calendar" ? "map" : mode));
   }, []);
   const [viewportYear, setViewportYear] = useState(null);
   const handleViewportYearChange = useCallback((year) => {
@@ -318,6 +325,20 @@ function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [diskReloadNotice, setDiskReloadNotice] = useState(false);
   const [thumbnailRefreshSignal, setThumbnailRefreshSignal] = useState(0);
+  // breadcrumbs for link hopping so u can always find ur way back home
+  const [linkBackStack, setLinkBackStack] = useState([]);
+  const [pendingLinkSelect, setPendingLinkSelect] = useState(null);
+  const [noteSearchRefresh, setNoteSearchRefresh] = useState(0);
+  // notes get re-read every time search opens so fresh edits show up. no stale gossip here
+  const noteContents = useNoteContents({
+    timelineFile: timelineData?.file,
+    elements: timelineData?.elements,
+    enabled: Boolean(timelineData),
+    refreshKey: noteSearchRefresh,
+  });
+  useEffect(() => {
+    if (isSearchOpen) setNoteSearchRefresh((n) => n + 1);
+  }, [isSearchOpen]);
 
   useEscapeKey(!!importConflict, () => setImportConflict(null));
   useEscapeKey(!!skippedFilesNotice, () => setSkippedFilesNotice(null));
@@ -1084,6 +1105,20 @@ function App() {
     });
   };
 
+  // every element pointing at the old note follows it to its new name. loyal little things
+  const handleNoteFileRenamed = useCallback((oldRef, newRef) => {
+    if (!oldRef || !newRef || oldRef === newRef) return;
+    setTimelineData((prevData) => {
+      if (!prevData?.elements?.some((el) => el.noteFile === oldRef)) return prevData;
+      const updatedData = {
+        ...prevData,
+        elements: prevData.elements.map((el) => (el.noteFile === oldRef ? { ...el, noteFile: newRef } : el)),
+      };
+      saveCurrentTimeline(updatedData).catch(console.error);
+      return updatedData;
+    });
+  }, [saveCurrentTimeline]);
+
   // Coordinates picked by clicking the map while the right panel picker is armed
   const handleCoordinatePicked = useCallback(({ lat, lng }) => {
     const targetId = coordPickRequest?.id;
@@ -1765,7 +1800,8 @@ function App() {
   })();
 
   const handleDownloadPNG = () => {
-    // Open the export PNG modal
+    // exports photograph the timeline canvas, so make sure it's actually on stage
+    if (viewMode !== "timeline") setViewMode("timeline");
     setIsExportPngModalOpen(true);
   };
 
@@ -1792,6 +1828,7 @@ function App() {
   }, [showToast, t]);
 
   const handleDownloadVideo = () => {
+    if (viewMode !== "timeline") setViewMode("timeline");
     setIsExportVideoModalOpen(true);
   };
 
@@ -1855,14 +1892,63 @@ function App() {
     }
   }, []);
 
+  const scheduleCardSave = (pending) => {
+    if (!pending) return;
+    const run = () => saveTimelineCard(pending);
+    if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 1000 });
+    else setTimeout(run, 0);
+  };
+
+  const handleFollowLink = async (link) => {
+    if (!link?.timeline || !timelineData) return;
+    const currentUid = getStorageId(timelineData.file);
+    if (link.timeline === currentUid) {
+      if (!link.element) return;
+      if (!timelineData.elements.some((el) => el.id === link.element)) {
+        showToast(t("app:links.elementMissing", "That element isn't here anymore"), "error", 2500);
+        return;
+      }
+      setLinkBackStack((prev) => [...prev, { timelineId: currentTimelineId, title: timelineData.file?.title, selectedId }].slice(-20));
+      setPendingLinkSelect({ id: link.element, n: Date.now() });
+      return;
+    }
+    const target = findLinkTarget(normalizeListing(await listTimelines()), link);
+    if (!target) {
+      showToast(t("app:links.timelineMissing", "Linked timeline not found in your library"), "error", 3000);
+      return;
+    }
+    scheduleCardSave(captureTimelineSnapshot());
+    setLinkBackStack((prev) => [...prev, { timelineId: currentTimelineId, title: timelineData.file?.title, selectedId }].slice(-20));
+    setPendingLinkSelect(link.element ? { id: link.element, n: Date.now() } : null);
+    await handleLoadTimeline(target.id, Boolean(target.thumbnailUrl));
+  };
+
+  const handleLinkBack = async () => {
+    const entry = linkBackStack[linkBackStack.length - 1];
+    if (!entry) return;
+    setLinkBackStack((prev) => prev.slice(0, -1));
+    if (entry.timelineId !== currentTimelineId) {
+      scheduleCardSave(captureTimelineSnapshot());
+      await handleLoadTimeline(entry.timelineId);
+    }
+    setPendingLinkSelect(entry.selectedId ? { id: entry.selectedId, n: Date.now() } : null);
+  };
+
+  // land on the linked element once its timeline has actually shown up
+  useEffect(() => {
+    if (!pendingLinkSelect?.id || !timelineData?.elements) return;
+    if (!timelineData.elements.some((el) => el.id === pendingLinkSelect.id)) return;
+    const id = pendingLinkSelect.id;
+    setPendingLinkSelect(null);
+    handleSelect(id);
+    requestAnimationFrame(() => requestAnimationFrame(() => timelineViewRef.current?.scrollToElement(id)));
+  }, [pendingLinkSelect, timelineData]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleBackToHome = () => {
     // Snapshot needs the live DOM; drawing waits until home has painted
-    const pending = captureTimelineSnapshot();
-    if (pending) {
-      const run = () => saveTimelineCard(pending);
-      if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 1000 });
-      else setTimeout(run, 0);
-    }
+    scheduleCardSave(captureTimelineSnapshot());
+    setLinkBackStack([]);
+    setPendingLinkSelect(null);
     setTimelineData(null);
     setCurrentTimelineId(null);
     setSelectedId(null);
@@ -2546,11 +2632,33 @@ function App() {
     }
   }, [filteredElements, selectedId]);
 
+  const availableViews = useMemo(() => getAvailableViews(timelineData?.file), [timelineData?.file]);
+
+  // a view whose setting got switched off quietly hands the stage back to the timeline
   useEffect(() => {
-    if (viewMode === "spreadsheet" && !timelineData?.file?.useSpreadsheet) {
-      setViewMode("timeline");
-    }
-  }, [viewMode, timelineData?.file?.useSpreadsheet]);
+    if (!availableViews.some((view) => view.id === viewMode)) setViewMode("timeline");
+  }, [viewMode, availableViews]);
+
+  useEffect(() => {
+    if (!timelineData) return undefined;
+    const handleViewKeys = (e) => {
+      const target = e.target;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT" || target?.isContentEditable) return;
+      for (const view of availableViews) {
+        const bind = keybinds[`view${view.id.charAt(0).toUpperCase()}${view.id.slice(1)}`];
+        // option+digit on a mac types a fancy symbol instead of the digit, so peek at the physical key too
+        const digit = bind?.keys?.find((k) => /^\d$/.test(k));
+        const macFallback = digit && e.altKey && e.code === `Digit${digit}` && matchesKeybind({ ...e, key: digit, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey }, bind);
+        if (matchesKeybind(e, bind) || macFallback) {
+          e.preventDefault();
+          setViewMode(view.id);
+          return;
+        }
+      }
+    };
+    window.addEventListener("keydown", handleViewKeys);
+    return () => window.removeEventListener("keydown", handleViewKeys);
+  }, [timelineData, availableViews, keybinds]);
 
   const compareElementsByTimelineOrder = useCallback((a, b) => {
     if (a.type === "event" && b.type === "event") {
@@ -2740,6 +2848,8 @@ function App() {
     <TimelineColorsContext.Provider value={timelineColors}>
       <TopBar
         title={timelineData.file?.title || "Timelines"}
+        backTitle={linkBackStack.length > 0 ? (linkBackStack[linkBackStack.length - 1].title || "") : null}
+        onBack={linkBackStack.length > 0 ? handleLinkBack : undefined}
         isLeftCollapsed={isLeftCollapsed}
         onToggleLeft={viewMode !== "spreadsheet" ? () => setIsLeftCollapsed((v) => !v) : undefined}
         isRightCollapsed={!isRightPanelVisible}
@@ -2782,6 +2892,7 @@ function App() {
               allElements={timelineData.elements}
               chipFilter={parsedChipQuery}
               chipQuery={chipQuery}
+              noteContents={noteContents}
               activeTags={activeTags}
               hiddenTags={hiddenTags}
               onToggleTag={handleToggleTag}
@@ -2859,13 +2970,14 @@ function App() {
             <ErrorBoundary name={t("common:panels.spreadsheet", "Spreadsheet")}>
               <SpreadsheetView
                 timelineData={filteredTimelineData}
+                noteContents={noteContents}
                 selectedId={selectedId}
                 onSelect={handleSelect}
                 onUpdate={handleUpdate}
                 leftPanelWidth={0}
                 rightPanelWidth={0}
                 isRightPanelOpen={false}
-                onSetViewMode={filteredTimelineData?.file?.useSpreadsheet ? setViewMode : undefined}
+                viewSwitcher={<ViewSwitcher viewMode={viewMode} views={availableViews} onChange={setViewMode} keybinds={keybinds} />}
                 onOpenSettings={() => setIsSettingsOpen(true)}
                 onBackToHome={handleBackToHome}
                 onAddEvent={handleAddEvent}
@@ -2882,6 +2994,19 @@ function App() {
                 onClearTags={handleClearTags}
                 pinnedTags={pinnedTags}
                 onTogglePinnedTag={handleTogglePinnedTag}
+              />
+            </ErrorBoundary>
+          ) : viewMode === "calendar" ? (
+            <ErrorBoundary name={t("common:panels.calendar", "Calendar")}>
+              <CalendarView
+                timelineData={filteredTimelineData}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+                onAddEvent={handleAddEvent}
+                focusYear={viewportYear}
+                leftInset={isLeftCollapsed ? COLLAPSED_WIDTH : sidebarWidth}
+                rightInset={isRightPanelVisible ? rightWidth : 0}
+                viewSwitcher={<ViewSwitcher viewMode={viewMode} views={availableViews} onChange={setViewMode} keybinds={keybinds} />}
               />
             </ErrorBoundary>
           ) : (
@@ -2920,13 +3045,16 @@ function App() {
               onTogglePinnedTag={handleTogglePinnedTag}
               onViewportYearChange={handleViewportYearChange}
               onChipQueryChange={setChipQuery}
+              noteContents={noteContents}
               tagFilterRequest={tagFilterRequest}
               focusSpanRequest={focusSpanRequest}
               coordPickRequest={coordPickRequest}
               onCoordinatePicked={handleCoordinatePicked}
               tagColors={timelineData.file?.tagColors || {}}
               keybinds={keybinds}
-              onSetViewMode={filteredTimelineData?.file?.useSpreadsheet ? setViewMode : undefined}
+              viewMode={viewMode}
+              onSetViewMode={setViewMode}
+              viewSwitcher={<ViewSwitcher viewMode={viewMode} views={availableViews} onChange={setViewMode} keybinds={keybinds} />}
               onDetailLevelChange={handleDetailLevelChange}
               onPatchFile={handlePatchFile}
               onNotify={showToast}
@@ -3065,6 +3193,8 @@ function App() {
                 nextElement={selectionNavigation.nextElement}
                 coordPickTargetId={coordPickRequest?.id ?? null}
                 onRequestCoordPick={handleRequestCoordPick}
+                onFollowLink={handleFollowLink}
+                onNoteFileRenamed={handleNoteFileRenamed}
               />
               </ErrorBoundary>
             </aside>
@@ -3177,6 +3307,7 @@ function App() {
         elements={timelineData?.elements ?? []}
         onSelect={handleSearchSelect}
         fileSettings={timelineData?.file}
+        noteContents={noteContents}
       />
       {importConflictModal}
       {skippedFilesModal}
